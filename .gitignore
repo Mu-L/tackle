@@ -3,8 +3,10 @@
 .claude-state
 CLAUDE.md
 
-# Docs (optional, not needed for publish)
-docs/
+# Docs (only keep config-reference and best-practices)
+docs/*
+!docs/config-reference.md
+!docs/best-practices.md
 task.md
 CHANGELOG.md
 

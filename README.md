@@ -3,7 +3,7 @@
 > 基于插件的 AI Agent 工作流框架，为 Claude Code 提供任务管理、工作流编排、角色管理等能力
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-3.0.0-blue.svg)](https://github.com/your-org/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/your-org/tackle)
 
 通过 npm 安装后，在任何项目中执行一条命令即可获得全部技能。
 
@@ -182,10 +182,7 @@ npm uninstall tackle
 
 ## 文档
 
-- [插件开发指南](docs/plugin-development.md) - 如何创建、测试和注册插件
-- [v3 迁移指南](docs/migration-to-v3.md) - 从旧架构迁移到插件化架构
 - [配置参考](docs/config-reference.md) - 完整的配置文件说明
-- [工具生态](docs/tools-ecosystem.md) - MCP 工具和内置 Skills
 - [最佳实践](docs/best-practices.md) - 使用建议和优化技巧
 
 ## 贡献
