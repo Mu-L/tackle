@@ -7,6 +7,7 @@ CLAUDE.md
 docs/*
 !docs/config-reference.md
 !docs/best-practices.md
+!docs/ai_workflow.md
 task.md
 CHANGELOG.md
 
