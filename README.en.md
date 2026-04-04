@@ -257,4 +257,3 @@ MIT License - See [LICENSE](LICENSE) file
 
 This project draws on excellent designs from the following open-source projects:
 - DeerFlow - Memory extraction and middleware architecture
-- Model Context Protocol - Tool integration standard

@@ -259,4 +259,3 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 本项目借鉴了以下开源项目的优秀设计：
 - DeerFlow - 记忆提取和中间件架构
-- Model Context Protocol - 工具集成标准
