@@ -939,12 +939,12 @@ HarnessBuild.run = function run(argv) {
 // ---------------------------------------------------------------------------
 
 /**
- * Merge tackle hooks into the target project's .claude/settings.json.
- * Reads existing settings, adds tackle-specific hooks, and writes back.
+ * Merge tackle-harness hooks into the target project's .claude/settings.json.
+ * Reads existing settings, adds tackle-harness-specific hooks, and writes back.
  * Idempotent: skips hooks that are already registered.
  *
  * @param {string} targetRoot  - target project root directory
- * @param {string} packageRoot - this package's root directory (node_modules/tackle/)
+ * @param {string} packageRoot - this package's root directory (node_modules/tackle-harness/)
  */
 HarnessBuild.prototype.updateSettings = function updateSettings(targetRoot, packageRoot) {
   var fs = require('fs');

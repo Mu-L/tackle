@@ -1,15 +1,15 @@
-# Tackle
+# Tackle Harness
 
 > A plugin-based AI Agent workflow framework that provides task management, workflow orchestration, and role management for Claude Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/your-org/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.2-blue.svg)](https://github.com/ph419/tackle)
 
 **[中文文档](README.md)**
 
-## Why Tackle
+## Why Tackle Harness
 
-You describe what you need; Tackle manages the entire process:
+You describe what you need; Tackle Harness manages the entire process:
 
 - **Plan first, human approval required** — AI outputs implementation plans and work package breakdowns, then waits for your confirmation before writing any code. No more "AI went rogue and changed a bunch of things."
 - **Complex requirements, parallel delivery** — Large requirements are automatically split into independent modules, with multiple agents working simultaneously. Frontend, backend, and database changes progress in parallel — no serial waiting.
@@ -44,7 +44,7 @@ flowchart LR
 ## Installation
 
 ```bash
-npm install tackle
+npm install tackle-harness
 ```
 
 ## Quick Start
@@ -54,11 +54,11 @@ npm install tackle
 cd your-project
 
 # One-command initialization (build skills + register hooks + create config directories)
-npx tackle init
+npx tackle-harness init
 
 # Or step by step
-npx tackle build      # Build skills to .claude/skills/, merge hooks into settings.json
-npx tackle validate   # Validate plugin integrity
+npx tackle-harness build      # Build skills to .claude/skills/, merge hooks into settings.json
+npx tackle-harness validate   # Validate plugin integrity
 ```
 
 ## Use Cases
@@ -75,7 +75,7 @@ Start workflow, implement team collaboration module, including:
 - Database table design
 ```
 
-**What Tackle does**:
+**What Tackle Harness does**:
 1. Analyzes requirement complexity, splits into 4 work packages (frontend, backend, database, integration testing)
 2. Outputs implementation plans for each work package, pauses for your review
 3. After your approval, dispatches multiple agents to develop modules in parallel
@@ -93,7 +93,7 @@ Start workflow, implement team collaboration module, including:
 Batch execute WP-015 through WP-019, fix these 5 bugs in parallel
 ```
 
-**What Tackle does**:
+**What Tackle Harness does**:
 1. Analyzes dependencies between the 5 bugs (check for overlapping file changes)
 2. Assigns conflict-free bugs to different agents for simultaneous fixes
 3. Queues dependent bugs sequentially, auto-starting the next after each completes
@@ -110,7 +110,7 @@ Batch execute WP-015 through WP-019, fix these 5 bugs in parallel
 Split work package, extract the user module from the monolith into an independent service
 ```
 
-**What Tackle does**:
+**What Tackle Harness does**:
 1. Deep analysis of code structure, identifies all modules and dependencies that need changes
 2. Generates a detailed refactoring plan (interface extraction, data migration, routing adjustments, etc.)
 3. Pauses for your review of the architecture proposal (critical decision point)
@@ -123,12 +123,12 @@ Split work package, extract the user module from the monolith into an independen
 
 | Command | Description |
 |---------|-------------|
-| `npx tackle` | Default: runs build |
-| `npx tackle build` | Build all skills, update .claude/settings.json |
-| `npx tackle validate` | Validate plugin format |
-| `npx tackle init` | First-time setup: build + create .claude/ directories |
-| `npx tackle --root <path>` | Specify target project path (default: current directory) |
-| `npx tackle --help` | Show help |
+| `npx tackle-harness` | Default: runs build |
+| `npx tackle-harness build` | Build all skills, update .claude/settings.json |
+| `npx tackle-harness validate` | Validate plugin format |
+| `npx tackle-harness init` | First-time setup: build + create .claude/ directories |
+| `npx tackle-harness --root <path>` | Specify target project path (default: current directory) |
+| `npx tackle-harness --help` | Show help |
 
 ## Skills Reference
 
@@ -167,7 +167,7 @@ Requirement → Plan(P0) → Review(P1) → Execute(P2) → Verify(P3) → Repor
 
 ## Plugin Architecture
 
-Tackle contains 4 plugin types, 18 plugins total:
+Tackle Harness contains 4 plugin types, 18 plugins total:
 
 | Type | Count | Purpose |
 |------|-------|---------|
@@ -180,7 +180,7 @@ Tackle contains 4 plugin types, 18 plugins total:
 
 ## Build Output Structure
 
-After running `tackle build`, the following is generated in your project:
+After running `tackle-harness build`, the following is generated in your project:
 
 ```
 your-project/
@@ -205,7 +205,7 @@ your-project/
 
 ### Skills not working after installation?
 
-Make sure you ran `npx tackle build` in your project root, and that `.claude/skills/` contains 12 skill folders.
+Make sure you ran `npx tackle-harness build` in your project root, and that `.claude/skills/` contains 12 skill folders.
 
 ### Can multiple projects share an installation?
 
@@ -214,27 +214,27 @@ Each project installs and builds independently. Different projects can use diffe
 ### Global installation
 
 ```bash
-npm install -g tackle
-tackle build
+npm install -g tackle-harness
+tackle-harness build
 ```
 
-After global installation, use the `tackle` command directly without `npx`.
+After global installation, use the `tackle-harness` command directly without `npx`.
 
 ### How to uninstall?
 
 ```bash
-npm uninstall tackle
+npm uninstall tackle-harness
 ```
 
 Skill files remain in `.claude/skills/`. Delete manually if needed.
 
 ### What are the hooks in settings.json?
 
-`tackle build` automatically injects two hooks into `.claude/settings.json`:
+`tackle-harness build` automatically injects two hooks into `.claude/settings.json`:
 - `PreToolUse(Edit|Write)` — Blocks file edits under certain states
 - `PostToolUse(Skill)` — Updates state after skill calls
 
-These hooks point to scripts in `node_modules/tackle/` and won't affect other configurations in your project. Existing settings.json content is preserved; only tackle-related hooks are appended.
+These hooks point to scripts in `node_modules/tackle-harness/` and won't affect other configurations in your project. Existing settings.json content is preserved; only tackle-harness-related hooks are appended.
 
 ## Documentation
 

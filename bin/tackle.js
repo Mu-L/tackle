@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * tackle - CLI entry point for the AI Agent Harness framework
+ * tackle-harness - CLI entry point for the AI Agent Harness framework
  *
  * Usage:
- *   tackle             Build all plugins into .claude/skills/ and update settings.json
- *   tackle build       Same as above (default command)
- *   tackle validate    Validate plugin.json files without building
- *   tackle init        First-time setup: build + generate default config
- *   tackle --help      Show usage info
+ *   tackle-harness             Build all plugins into .claude/skills/ and update settings.json
+ *   tackle-harness build       Same as above (default command)
+ *   tackle-harness validate    Validate plugin.json files without building
+ *   tackle-harness init        First-time setup: build + generate default config
+ *   tackle-harness --help      Show usage info
  */
 
 'use strict';
@@ -80,8 +80,8 @@ function cmdBuild() {
   console.log(result.summary);
 
   if (result.success) {
-    console.log('[tackle] Settings updated: .claude/settings.json');
-    console.log('[tackle] Done! Skills are ready to use.');
+    console.log('[tackle-harness] Settings updated: .claude/settings.json');
+    console.log('[tackle-harness] Done! Skills are ready to use.');
   }
 
   process.exit(result.success ? 0 : 1);
@@ -95,16 +95,16 @@ function cmdValidate() {
 }
 
 function cmdInit() {
-  console.log('[tackle] Initializing...');
-  console.log('[tackle] Target project: ' + targetRoot);
-  console.log('[tackle] Package root:   ' + packageRoot);
+  console.log('[tackle-harness] Initializing...');
+  console.log('[tackle-harness] Target project: ' + targetRoot);
+  console.log('[tackle-harness] Package root:   ' + packageRoot);
   console.log('');
 
   // 1. Ensure .claude/ directory exists
   var claudeDir = path.join(targetRoot, '.claude');
   if (!fs.existsSync(claudeDir)) {
     fs.mkdirSync(claudeDir, { recursive: true });
-    console.log('[tackle] Created .claude/ directory');
+    console.log('[tackle-harness] Created .claude/ directory');
   }
 
   // 2. Run build
@@ -112,19 +112,19 @@ function cmdInit() {
 }
 
 function cmdHelp() {
-  console.log('tackle - Plugin-based AI Agent Harness for Claude Code');
+  console.log('tackle-harness - Plugin-based AI Agent Harness for Claude Code');
   console.log('');
   console.log('Usage:');
-  console.log('  tackle             Build all plugins (default)');
-  console.log('  tackle build       Build all plugins');
-  console.log('  tackle validate    Validate plugin.json files');
-  console.log('  tackle init        First-time setup (build + config)');
+  console.log('  tackle-harness             Build all plugins (default)');
+  console.log('  tackle-harness build       Build all plugins');
+  console.log('  tackle-harness validate    Validate plugin.json files');
+  console.log('  tackle-harness init        First-time setup (build + config)');
   console.log('');
   console.log('Options:');
   console.log('  --root <path>      Specify target project root (default: cwd)');
   console.log('  --help, -h         Show this help message');
   console.log('');
-  console.log('After running tackle build, skills are available in .claude/skills/');
+  console.log('After running tackle-harness build, skills are available in .claude/skills/');
   console.log('and hooks are registered in .claude/settings.json');
   process.exit(0);
 }

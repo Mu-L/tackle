@@ -1,15 +1,15 @@
-# Tackle
+# Tackle Harness
 
 > 基于插件的 AI Agent 工作流框架，为 Claude Code 提供任务管理、工作流编排、角色管理等能力
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)](https://github.com/your-org/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.2-blue.svg)](https://github.com/ph419/tackle)
 
 **[English](README.en.md)**
 
-## 为什么选择 Tackle
+## 为什么选择 Tackle Harness
 
-你告诉 AI 需求，Tackle 帮你管好整个流程：
+你告诉 AI 需求，Tackle Harness 帮你管好整个流程：
 
 - **方案先行，人工把关** — AI 先输出实施方案和工作包拆分，等你确认后才动手写代码。不会出现「AI 自作主张改了一堆东西」的情况。
 - **复杂需求，并行交付** — 大需求自动拆成多个独立模块，调度多个 Agent 同时工作。前后端、数据库变更同步推进，不用串行等待。
@@ -46,7 +46,7 @@ flowchart LR
 ## 安装
 
 ```bash
-npm install tackle
+npm install tackle-harness
 ```
 
 ## 快速开始
@@ -56,11 +56,11 @@ npm install tackle
 cd your-project
 
 # 一键初始化（构建技能 + 注册钩子 + 创建配置目录）
-npx tackle init
+npx tackle-harness init
 
 # 或者分步执行
-npx tackle build      # 构建技能到 .claude/skills/，合并 hooks 到 settings.json
-npx tackle validate   # 验证插件完整性
+npx tackle-harness build      # 构建技能到 .claude/skills/，合并 hooks 到 settings.json
+npx tackle-harness validate   # 验证插件完整性
 ```
 
 ## 使用场景
@@ -77,7 +77,7 @@ npx tackle validate   # 验证插件完整性
 - 数据库表设计
 ```
 
-**Tackle 会做什么**：
+**Tackle Harness 会做什么**：
 1. 分析需求复杂度，拆分为 4 个工作包（前端、后端、数据库、集成测试）
 2. 输出每个工作包的实施方案，暂停等你审核
 3. 你确认后，调度多个 Agent 并行开发各模块
@@ -95,7 +95,7 @@ npx tackle validate   # 验证插件完整性
 批量执行 WP-015 到 WP-019，并行修复这 5 个 Bug
 ```
 
-**Tackle 会做什么**：
+**Tackle Harness 会做什么**：
 1. 分析 5 个 Bug 之间的依赖关系（有没有改动同一文件）
 2. 无冲突的 Bug 分配给不同 Agent 同时修复
 3. 有依赖的 Bug 按顺序排队，前一个完成后自动启动下一个
@@ -112,7 +112,7 @@ npx tackle validate   # 验证插件完整性
 拆分工作包，将用户模块从单体应用中拆分为独立服务
 ```
 
-**Tackle 会做什么**：
+**Tackle Harness 会做什么**：
 1. 深入分析代码结构，识别所有需要改动的模块和依赖关系
 2. 生成详细的重构计划（接口抽取、数据迁移、路由调整等）
 3. 暂停等你审核架构方案（这是关键决策点）
@@ -125,12 +125,12 @@ npx tackle validate   # 验证插件完整性
 
 | 命令 | 说明 |
 |------|------|
-| `npx tackle` | 默认执行 build |
-| `npx tackle build` | 构建所有技能，更新 .claude/settings.json |
-| `npx tackle validate` | 验证插件格式是否正确 |
-| `npx tackle init` | 首次安装：build + 创建 .claude/ 目录 |
-| `npx tackle --root <path>` | 指定目标项目路径（默认为当前目录） |
-| `npx tackle --help` | 查看帮助信息 |
+| `npx tackle-harness` | 默认执行 build |
+| `npx tackle-harness build` | 构建所有技能，更新 .claude/settings.json |
+| `npx tackle-harness validate` | 验证插件格式是否正确 |
+| `npx tackle-harness init` | 首次安装：build + 创建 .claude/ 目录 |
+| `npx tackle-harness --root <path>` | 指定目标项目路径（默认为当前目录） |
+| `npx tackle-harness --help` | 查看帮助信息 |
 
 ## 技能清单
 
@@ -169,7 +169,7 @@ npx tackle validate   # 验证插件完整性
 
 ## 插件架构
 
-Tackle 包含四类插件，共 18 个：
+Tackle Harness 包含四类插件，共 18 个：
 
 | 类型 | 数量 | 作用 |
 |------|------|------|
@@ -182,7 +182,7 @@ Tackle 包含四类插件，共 18 个：
 
 ## 构建后的项目结构
 
-执行 `tackle build` 后，你的项目中会生成以下内容：
+执行 `tackle-harness build` 后，你的项目中会生成以下内容：
 
 ```
 your-project/
@@ -207,7 +207,7 @@ your-project/
 
 ### 安装后技能没有生效？
 
-确保在项目根目录执行了 `npx tackle build`，并且 `.claude/skills/` 目录下有 12 个技能文件夹。
+确保在项目根目录执行了 `npx tackle-harness build`，并且 `.claude/skills/` 目录下有 12 个技能文件夹。
 
 ### 多个项目能否共用？
 
@@ -216,27 +216,27 @@ your-project/
 ### 全局安装
 
 ```bash
-npm install -g tackle
-tackle build
+npm install -g tackle-harness
+tackle-harness build
 ```
 
-全局安装后直接使用 `tackle` 命令，无需 `npx`。
+全局安装后直接使用 `tackle-harness` 命令，无需 `npx`。
 
 ### 如何卸载？
 
 ```bash
-npm uninstall tackle
+npm uninstall tackle-harness
 ```
 
 技能文件会保留在 `.claude/skills/` 中，如需清理请手动删除。
 
 ### settings.json 中的 hooks 是什么？
 
-`tackle build` 会自动向 `.claude/settings.json` 注入两个 hook：
+`tackle-harness build` 会自动向 `.claude/settings.json` 注入两个 hook：
 - `PreToolUse(Edit|Write)` — 在特定状态下阻止文件编辑
 - `PostToolUse(Skill)` — 技能调用后更新状态
 
-这些 hook 指向 `node_modules/tackle/` 中的脚本，不会影响你项目中的其他配置。已有的 settings.json 内容会被保留，仅追加 tackle 相关的 hooks。
+这些 hook 指向 `node_modules/tackle-harness/` 中的脚本，不会影响你项目中的其他配置。已有的 settings.json 内容会被保留，仅追加 tackle-harness 相关的 hooks。
 
 ## 文档
 

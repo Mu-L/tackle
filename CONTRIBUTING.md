@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你对 Tackle 的关注！我们欢迎所有形式的贡献——无论是修复 Bug、新增功能、改进文档，还是提出建议。
+感谢你对 Tackle Harness 的关注！我们欢迎所有形式的贡献——无论是修复 Bug、新增功能、改进文档，还是提出建议。
 
 ## 目录
 
@@ -265,7 +265,7 @@ git rebase upstream/main
 
 1. **Bug 描述**：清晰描述遇到的问题
 2. **复现步骤**：
-   1. 执行 `npx tackle build`
+   1. 执行 `npx tackle-harness build`
    2. 进入项目目录 `...`
    3. 执行 `...`
    4. 观察到错误 `...`
@@ -274,7 +274,7 @@ git rebase upstream/main
 5. **环境信息**：
    - 操作系统（如 Windows 11、macOS 15）
    - Node.js 版本（`node -v` 输出）
-   - Tackle 版本
+   - Tackle Harness 版本
 6. **附加信息**：错误日志、截图等
 
 ### 功能建议
@@ -290,7 +290,7 @@ git rebase upstream/main
 
 ## 插件开发
 
-如果你想为 Tackle 开发新插件，请先阅读以下文档：
+如果你想为 Tackle Harness 开发新插件，请先阅读以下文档：
 
 - [插件开发指南](docs/plugin-development.md) — 完整的插件创建流程
 - [配置参考](docs/config-reference.md) — 配置文件格式说明
@@ -342,4 +342,4 @@ git rebase upstream/main
 - 在 [GitHub Issues](https://github.com/<org>/tackle/issues) 中提问
 - 查阅 [文档目录](docs/) 中的相关文档
 
-再次感谢你的贡献！每一个 PR、每一个 Issue、每一行代码都让 Tackle 变得更好。
+再次感谢你的贡献！每一个 PR、每一个 Issue、每一行代码都让 Tackle Harness 变得更好。

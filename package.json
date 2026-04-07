@@ -1,10 +1,10 @@
 {
-  "name": "tackle",
-  "version": "3.0.0",
+  "name": "tackle-harness",
+  "version": "0.0.2",
   "description": "Plugin-based AI Agent Harness framework for Claude Code",
   "main": "plugins/runtime/harness-build.js",
   "bin": {
-    "tackle": "bin/tackle.js"
+    "tackle-harness": "bin/tackle.js"
   },
   "files": [
     "bin/",
