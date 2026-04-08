@@ -39,9 +39,9 @@ description: Use when user says "批量执行", "并行执行", "调度子代理
 
 | 场景 | 执行方式 |
 |------|----------|
-| 无依赖的多个工作包 | 并行执行 (Teamee 自主认领) |
-| 有依赖链的工作包 | blockedBy 自动阻塞 |
-| 混合依赖 | TaskList 自动协调 |
+| 无依赖的多个工作包 | 并行执行 (每 WP 一个专用 Teamee) |
+| 有依赖链的工作包 | blockedBy 阻塞 + 依赖解除后按需创建 Teamee |
+| 混合依赖 | 监控循环动态创建 + 即时销毁 |
 
 ---
 
@@ -54,27 +54,30 @@ description: Use when user says "批量执行", "并行执行", "调度子代理
 │  1. 解析工作包 → 分析依赖                                     │
 │  2. TeamCreate 创建团队                                      │
 │  3. TaskCreate 创建任务 + 设置 blockedBy                      │
-│  4. 角色匹配 → 确定需要哪些专家                                │
-│  5. Agent 启动 Teamee (注入角色+记忆)                         │
-│  6. 监控 TaskList + 接收空闲通知                              │
-│  7. 全部完成后 TeamDelete                                     │
-│  8. 经验提取 + completion-report                              │
+│  4. 角色匹配 → 预计算每个 WP 的角色和记忆                      │
+│  5. 监控循环:                                                │
+│     - 检测 newly-unblocked 任务 → 按需创建专用 Teamee (1:1)  │
+│     - 检测已完成的任务 → 即时销毁对应 Teamee                   │
+│     - 维护映射表 {task_id → teamee_name}                     │
+│  6. 全部完成后 TeamDelete                                     │
+│  7. 经验提取 + completion-report                              │
 └─────────────────────────────────────────────────────────────┘
                               │
         ┌─────────────────────┼─────────────────────┐
         ▼                     ▼                     ▼
   ┌──────────┐          ┌──────────┐          ┌──────────┐
-  │ Teamee 1 │          │ Teamee 2 │          │ Teamee 3 │
-  │ 角色专家  │          │ 角色专家  │          │ 角色专家  │
+  │ Teamee A │          │ Teamee B │          │ Teamee C │
+  │ WP-037   │          │ WP-038   │          │ WP-039   │
+  │ 专用绑定  │          │ 专用绑定  │          │ 专用绑定  │
   └────┬─────┘          └────┬─────┘          └────┬─────┘
-       │                     │                     │
-       └─────────────────────┼─────────────────────┘
-                             ▼
+       │ 已完成              │ 执行中               │ blockedBy #2
+       │ 即时销毁            │                     │ 等待创建
+       ▼                     ▼                     ▼
               ┌───────────────────────────────┐
               │     共享 Task List            │
-              │  • Task #1: WP-037 (完成)     │
-              │  • Task #2: WP-038 (进行中)   │
-              │  • Task #3: WP-039 (blockedBy #2) │
+              │  Task #1: WP-037 (completed)  │
+              │  Task #2: WP-038 (in_progress)│
+              │  Task #3: WP-039 (blockedBy #2)│
               └───────────────────────────────┘
 ```
 
@@ -83,7 +86,7 @@ description: Use when user says "批量执行", "并行执行", "调度子代理
 ## Flow
 
 ```dot
-digraph dispatcher_v2 {
+digraph dispatcher_v3 {
     rankdir=TB;
 
     // 准备阶段
@@ -97,19 +100,27 @@ digraph dispatcher_v2 {
     "设置 blockedBy 依赖" [shape=box];
 
     // 角色匹配
-    "角色匹配" [shape=box, style=filled, fillcolor=lightyellow];
+    "角色匹配 (预计算)" [shape=box, style=filled, fillcolor=lightyellow];
     "读取角色定义" [shape=box];
     "注入专属记忆" [shape=box];
 
-    // Teamee 启动
-    "Agent 启动 Teamee" [shape=box, style=filled, fillcolor=orange];
-    "Teamee 认领任务" [shape=box];
-    "Teamee 执行任务" [shape=box];
-    "TaskUpdate 更新状态" [shape=box];
+    // 监控循环
+    "监控循环: TaskList" [shape=diamond, style=filled, fillcolor=orange];
+    "检测 newly-unblocked 任务" [shape=box];
+    "为可用任务创建专用 Teamee" [shape=box, style=filled, fillcolor=orange];
+    "预分配 owner (TaskUpdate)" [shape=box];
+    "Teamee 执行单一任务" [shape=box];
+    "TaskUpdate 标记 completed" [shape=box];
 
-    // 协调
-    "检查 TaskList" [shape=diamond];
-    "还有待处理任务?" [shape=diamond];
+    // 即时销毁
+    "检测已完成任务" [shape=box];
+    "发送 shutdown_request" [shape=box, style=filled, fillcolor=red];
+    "等待 shutdown_response" [shape=box];
+    "从映射表移除" [shape=box];
+
+    // 循环判断
+    "所有任务 completed?" [shape=diamond];
+    "超时?" [shape=diamond];
 
     // 收尾
     "TeamDelete 清理团队" [shape=box];
@@ -124,20 +135,29 @@ digraph dispatcher_v2 {
 
     "TeamCreate 创建团队" -> "TaskCreate 创建任务";
     "TaskCreate 创建任务" -> "设置 blockedBy 依赖";
-    "设置 blockedBy 依赖" -> "角色匹配";
-    "角色匹配" -> "读取角色定义";
+    "设置 blockedBy 依赖" -> "角色匹配 (预计算)";
+
+    "角色匹配 (预计算)" -> "读取角色定义";
     "读取角色定义" -> "注入专属记忆";
-    "注入专属记忆" -> "Agent 启动 Teamee";
+    "注入专属记忆" -> "监控循环: TaskList";
 
-    "Agent 启动 Teamee" -> "Teamee 认领任务";
-    "Teamee 认领任务" -> "Teamee 执行任务";
-    "Teamee 执行任务" -> "TaskUpdate 更新状态";
-    "TaskUpdate 更新状态" -> "检查 TaskList";
-    "检查 TaskList" -> "还有待处理任务?";
-    "还有待处理任务?" -> "Teamee 认领任务" [label="是"];
-    "还有待处理任务?" -> "发送空闲通知" [label="否"];
+    "监控循环: TaskList" -> "检测 newly-unblocked 任务";
+    "检测 newly-unblocked 任务" -> "为可用任务创建专用 Teamee" [label="有可用任务"];
+    "为可用任务创建专用 Teamee" -> "预分配 owner (TaskUpdate)";
+    "预分配 owner (TaskUpdate)" -> "Teamee 执行单一任务";
+    "Teamee 执行单一任务" -> "TaskUpdate 标记 completed";
 
-    "发送空闲通知" -> "TeamDelete 清理团队";
+    "监控循环: TaskList" -> "检测已完成任务";
+    "检测已完成任务" -> "发送 shutdown_request" [label="有新完成"];
+    "发送 shutdown_request" -> "等待 shutdown_response";
+    "等待 shutdown_response" -> "从映射表移除";
+
+    "监控循环: TaskList" -> "所有任务 completed?";
+    "所有任务 completed?" -> "TeamDelete 清理团队" [label="是"];
+    "所有任务 completed?" -> "超时?" [label="否"];
+    "超时?" -> "监控循环: TaskList" [label="否"];
+    "超时?" -> "TeamDelete 清理团队" [label="是"];
+
     "TeamDelete 清理团队" -> "经验提取";
     "经验提取" -> "生成执行报告";
 }
@@ -230,94 +250,214 @@ def match_role(work_package):
     return max(scores, key=scores.get)
 ```
 
-### Step 5: 启动 Teamee
+### Step 5: 预计算角色 + 记忆准备
+
+**⚠️ 重要**: 角色匹配和记忆注入在监控循环之前完成（预计算），为每个工作包准备好角色 Prompt。
+
+```
+# 预计算所有工作包的角色匹配结果和记忆
+
+wp_assignments = {}  # {task_id: {role_id, role_prompt, memories, wp_doc_path}}
+
+for task in tasks:
+    wp = extract_work_package(task)
+    role = match_role(wp)
+    memories = load_memories(role.id)
+    wp_assignments[task.id] = {
+        "role_id": role.id,
+        "role_prompt": role.prompt_template,
+        "memories": memories,
+        "wp_doc_path": wp.doc_path
+    }
+```
+
+**为什么预计算**:
+- 监控循环中按需创建 Teamee 时，直接使用预计算结果构建 Prompt
+- 避免在监控循环中重复执行角色匹配逻辑
+- 角色匹配算法不变（仍使用 Step 4 中的算法）
+
+### Step 6: 初始创建 Teamee（首次可用任务）
+
+<HARD-GATE>
+Step 5 完成后，立即检查有哪些任务的 blockedBy 已满足。
+为每个 initially-unblocked 的任务创建专用 Teamee。
+不可跳过此步骤！
+</HARD-GATE>
 
 **⚠️ 重要**: 必须使用 `general-purpose` subagent_type！
 
 不要使用 `Explore` 或其他只读 agent 类型，因为它们没有 SendMessage 工具，
-无法响应 shutdown_request，会导致 TeamDelete 卡死。
+无法响应 shutdown_request，会导致即时销毁流程失败。
 
 ```
-Agent:
-  name: "{role_id}"  # 如 "godot-scene-expert"
-  team_name: "batch-20260314-WP073-075"
-  subagent_type: "general-purpose"  # ✅ 必须使用 general-purpose
-  prompt: |
-    {Teamee Prompt 模板}
+# 初始化映射表
+teamee_map = {}  # {task_id: teamee_name}
+
+# 检查哪些任务在初始时就没有阻塞
+tasks = TaskList()
+for task in tasks:
+    if task.status == "pending" and is_unblocked(task):
+        # 从预计算结果获取角色信息
+        assignment = wp_assignments[task.id]
+
+        # 生成唯一的 Teamee 名称（包含 task_id 和 role）
+        teamee_name = f"{assignment.role_id}-t{task.id}"
+
+        # 预分配 owner
+        TaskUpdate(taskId=task.id, owner=teamee_name)
+
+        # 创建专用 Teamee
+        Agent(
+            name=teamee_name,
+            team_name="{team_name}",
+            subagent_type="general-purpose",  # 必须使用 general-purpose
+            prompt=build_single_task_prompt(
+                teamee_name=teamee_name,
+                task_id=task.id,
+                role_prompt=assignment.role_prompt,
+                memories=assignment.memories,
+                wp_doc_path=assignment.wp_doc_path
+            )
+        )
+
+        # 记录映射关系
+        teamee_map[task.id] = teamee_name
 ```
 
 **为什么不能用 Explore agent**:
 - Explore agent 的工具集: `All tools except Agent, ExitPlanMode, Edit, Write, NotebookEdit`
 - 没有 Agent 工具 = 没有 SendMessage
-- 无法发送 `shutdown_response` = TeamDelete 永远等待 = 清理死锁
+- 无法发送 `shutdown_response` = 即时销毁失败 = 资源泄漏
 
-### Step 6: Teamee 自主执行
-
-Teamee 收到 prompt 后，按以下流程工作：
-
-```
-1. TaskList 查看可用任务
-2. 找到: status=pending + owner=空 + blockedBy 已满足
-3. TaskUpdate 认领任务 (设置 owner)
-4. 执行任务
-5. TaskUpdate 标记完成 (status=completed)
-6. 重复步骤 1-5 直到无可用任务
-7. 等待 Lead 的 shutdown_request（不要主动退出）
-```
-
-### Step 6.5: 监控任务完成状态 (🔴 关键步骤)
+### Step 6.5: 监控循环 (🔴 关键步骤 — 动态创建 + 即时销毁)
 
 <HARD-GATE>
 Lead Agent 必须进入监控循环，不可跳过！
-这是保证 TeamDelete 执行的核心机制。
+此循环负责:
+1. 检测 newly-unblocked 任务 → 按需创建专用 Teamee
+2. 检测已完成任务 → 即时销毁对应 Teamee
+3. 判断全部完成 → 退出循环
+这是保证资源及时释放和依赖正确解析的核心机制。
 </HARD-GATE>
 
 ```
 # Lead Agent 监控循环
 loop_interval = 30  # 秒
 max_wait_time = 7200  # 2 小时
+shutdown_timeout = 15  # 等待 Teamee shutdown 响应的超时
 
 start_time = now()
 while (now() - start_time) < max_wait_time:
-    # 1. 获取任务状态
+    # ---- Phase A: 获取任务状态 ----
     tasks = TaskList()
 
-    # 2. 统计状态
+    # ---- Phase B: 即时销毁已完成的 Teamee ----
+    for task in tasks:
+        if task.status == "completed" and task.id in teamee_map:
+            teamee_name = teamee_map[task.id]
+            print(f"任务 {task.id} 已完成，即时销毁 Teamee: {teamee_name}")
+
+            # B1. 发送 shutdown_request
+            SendMessage(to=teamee_name, message={
+                "type": "shutdown_request",
+                "reason": f"任务 {task.id} 已完成，释放资源",
+                "request_id": f"shutdown-{task.id}-{timestamp()}"
+            })
+
+            # B2. 等待 shutdown_response（最多 shutdown_timeout 秒）
+            #     Teamee 收到后应回复 {"type":"shutdown_response","approve":true}
+            #     如果超时未响应，继续执行（不阻塞循环）
+
+            # B3. 从映射表移除
+            del teamee_map[task.id]
+            print(f"Teamee {teamee_name} 已销毁并从映射表移除")
+
+    # ---- Phase C: 按需创建 Teamee 处理 newly-unblocked 任务 ----
+    for task in tasks:
+        if task.status == "pending" and task.owner == "" and is_unblocked(task):
+            # C1. 检查是否已有映射（防止重复创建）
+            if task.id in teamee_map:
+                continue
+
+            # C2. 从预计算结果获取角色信息
+            assignment = wp_assignments[task.id]
+            teamee_name = f"{assignment.role_id}-t{task.id}"
+
+            # C3. 预分配 owner
+            TaskUpdate(taskId=task.id, owner=teamee_name)
+
+            # C4. 创建专用 Teamee
+            Agent(
+                name=teamee_name,
+                team_name="{team_name}",
+                subagent_type="general-purpose",
+                prompt=build_single_task_prompt(
+                    teamee_name=teamee_name,
+                    task_id=task.id,
+                    role_prompt=assignment.role_prompt,
+                    memories=assignment.memories,
+                    wp_doc_path=assignment.wp_doc_path
+                )
+            )
+
+            # C5. 记录映射关系
+            teamee_map[task.id] = teamee_name
+            print(f"为任务 {task.id} 创建专用 Teamee: {teamee_name}")
+
+    # ---- Phase D: 判断退出条件 ----
     completed = count(status == "completed")
-    in_progress = count(status == "in_progress")
-    pending = count(status == "pending")
     total = len(tasks)
 
-    # 3. 输出状态（可选）
-    print(f"📊 任务状态: 完成={completed}/{total}, 进行中={in_progress}, 待处理={pending}")
-
-    # 4. 判断清理条件
     if completed == total:
-        print("✅ 所有任务完成，准备清理")
-        break  # 退出循环，执行 Step 7
+        print("所有任务完成，退出监控循环")
+        break
 
-    if in_progress > 0:
-        # 有任务正在执行，继续等待
-        sleep(loop_interval)
-        continue
-
-    if pending > 0 and in_progress == 0:
-        # 有待处理任务但无活跃 Teamee（可能异常）
-        print("⚠️ 检测到异常：有待处理任务但无活跃执行者")
-        break  # 退出循环，执行异常清理
+    # Phase D2: 异常检测
+    in_progress = count(status == "in_progress")
+    pending = count(status == "pending")
+    if pending > 0 and in_progress == 0 and len(teamee_map) == 0:
+        print("异常: 有待处理任务但无活跃 Teamee 且无映射")
+        break
 
     sleep(loop_interval)
 
 # 超时处理
 if (now() - start_time) >= max_wait_time:
-    print("⚠️ 监控超时，强制执行清理")
+    print("监控超时，强制执行清理")
+    # 销毁所有剩余的 Teamee
+    for task_id, teamee_name in teamee_map.items():
+        SendMessage(to=teamee_name, message={
+            "type": "shutdown_request",
+            "reason": "监控超时，强制清理",
+            "request_id": f"force-shutdown-{task_id}-{timestamp()}"
+        })
 ```
+
+**辅助函数 — 判断任务是否已解除阻塞**:
+```
+def is_unblocked(task):
+    """检查任务的所有 blockedBy 依赖是否都已满足"""
+    if not task.blockedBy:
+        return True
+    all_tasks = TaskList()
+    for blocker_id in task.blockedBy:
+        blocker = find_by_id(all_tasks, blocker_id)
+        if blocker.status != "completed":
+            return False
+    return True
+```
+
+**监控循环关键特性**:
+- **Phase B (即时销毁)** 在 Phase C (创建) 之前执行，确保资源先释放再分配
+- 每次循环都检查 `teamee_map` 防止重复创建/重复销毁
+- 异常检测同时检查 `teamee_map` 是否为空，避免误判
 
 ### Step 7: 清理团队 (🔴 强制执行 + 验证)
 
 <HARD-GATE>
 TeamDelete 必须执行，且必须验证结果！
-无论任务成功、失败还是超时，都必须清理并验证。
+注意：大部分 Teamee 已在 Step 6.5 监控循环中即时销毁。
+此步骤负责最终的 TeamDelete 调用和验证。
 不信任 TeamDelete 返回值，必须检查目录是否真的被删除！
 以下步骤必须按顺序逐一执行，不可跳过！
 </HARD-GATE>
@@ -344,19 +484,32 @@ TeamDelete 必须执行，且必须验证结果！
 
 ---
 
-#### Step 7b: 发送 shutdown_request
+#### Step 7b: 发送 shutdown_request (清理残留 Teamee)
 
-读取团队配置获取活跃 Teamee 列表:
-- 读取 `~/.claude/teams/$team_name/config.json`
-- 提取 `members` 中 `name != "team-lead"` 的成员
-
-向每个 Teamee 发送:
+检查 `teamee_map` 中是否还有未销毁的 Teamee:
 ```
-SendMessage(to=teamee.name, message={
-    "type": "shutdown_request",
-    "reason": "所有任务已完成/超时，准备清理团队",
-    "request_id": "<生成唯一 ID>"
-})
+# 检查映射表中是否还有残留 Teamee
+if teamee_map is not empty:
+    print(f"⚠️ 发现 {len(teamee_map)} 个未销毁的 Teamee，发送 shutdown_request")
+    for task_id, teamee_name in teamee_map.items():
+        SendMessage(to=teamee_name, message={
+            "type": "shutdown_request",
+            "reason": "最终清理阶段，准备 TeamDelete",
+            "request_id": f"final-shutdown-{task_id}-{timestamp()}"
+        })
+else:
+    print("所有 Teamee 已在监控循环中即时销毁，无需额外 shutdown")
+
+# 额外安全网: 读取团队配置检查是否有遗漏的成员
+# (防止映射表不一致的情况)
+config = Read("~/.claude/teams/$team_name/config.json")
+for member in config.members:
+    if member.name != "team-lead" and member.name not in teamee_map.values():
+        SendMessage(to=member.name, message={
+            "type": "shutdown_request",
+            "reason": "最终清理阶段，发现未在映射表中的成员",
+            "request_id": f"orphan-shutdown-{member.name}-{timestamp()}"
+        })
 ```
 
 ---
@@ -441,7 +594,7 @@ test -d "$HOME/.claude/tasks/$team_name" && echo "STILL_EXISTS" || echo "CLEAN"
 ## Teamee Prompt 模板
 
 ```markdown
-# [角色名称] - 团队任务执行
+# [角色名称] - 单一任务专用执行
 
 ## 你的身份
 {角色 prompt_template}
@@ -450,12 +603,22 @@ test -d "$HOME/.claude/tasks/$team_name" && echo "STILL_EXISTS" || echo "CLEAN"
 - 团队名称: {team_name}
 - 你的角色: {role_id}
 
+## 任务绑定 (1:1 专用)
+
+**⚠️ 重要：你只负责处理一个任务，不可认领其他任务！**
+
+- 分配给你的任务 ID: {task_id}
+- 任务主题: {task_subject}
+- 完成此任务后，你将被立即销毁释放资源
+- **禁止** 认领或执行其他任务
+- 可以调用 TaskList 查看全局进度，但仅限查看，不可对其他任务执行 TaskUpdate
+
 ## 📖 首要任务：阅读工作包文档
 
 **执行任何任务前，必须先读取工作包文档！**
 
 ```
-1. 认领任务后，立即读取任务 description 中指定的工作包文档
+1. 确认任务后，立即读取任务 description 中指定的工作包文档
 2. 工作包文档路径格式: `docs/wp/WP-XXX.md` 或 `docs/wp/WP-XXX-N-type.md`
 3. 从文档中获取:
    - 问题分析/上下文
@@ -466,36 +629,28 @@ test -d "$HOME/.claude/tasks/$team_name" && echo "STILL_EXISTS" || echo "CLEAN"
 
 ## 工作流程 (必须严格遵守)
 
-### 1. 认领任务
+### 1. 确认任务分配
 ```
-# 查看所有任务
-result = TaskList()
-
-# 找可用任务:
-# - status = "pending"
-# - owner = 空 (无人认领)
-# - blockedBy 列表中的任务都已 completed
-
-# 认领任务
-TaskUpdate(taskId="{任务ID}", owner="{你的role_id}")
+# 你的任务已由 Lead 预分配，直接确认
+TaskGet(taskId="{task_id}")
+# 验证 owner 是你、status 是 pending 或 in_progress
 ```
 
-### 2. 执行任务
-- 认领后立即将 status 改为 "in_progress"
+### 2. 开始执行
+- 立即将 status 改为 "in_progress"
+- TaskUpdate(taskId="{task_id}", status="in_progress")
+- 读取工作包文档获取完整上下文
 - 按任务描述执行
 - 完成验收标准
 
 ### 3. 完成任务
 ```
-TaskUpdate(taskId="{任务ID}", status="completed")
+TaskUpdate(taskId="{task_id}", status="completed")
 ```
 
-### 4. 继续下一个任务
-- 再次调用 TaskList 查看可用任务
-- 如有可用任务，重复步骤 1-3
-- 如无可用任务，**等待 Lead 的 shutdown_request**（不要主动退出）
+### 4. 等待关闭 (🔴 必须响应)
 
-### 5. 接收关闭请求 (🔴 必须响应)
+**完成任务后，不要查找其他任务！直接等待 Lead 的 shutdown_request。**
 
 当收到 `shutdown_request` 消息时，**必须**发送响应：
 
@@ -515,7 +670,10 @@ SendMessage(
 
 发送响应后，你的工作结束，可以退出。
 
-**⚠️ 重要**: 不要主动退出！必须等待 Lead 的 shutdown_request。
+**⚠️ 禁止事项**:
+- 不要认领或执行其他任务（可以查看 TaskList 了解进度，但不可对其他任务执行 TaskUpdate）
+- 不要在完成后继续工作
+- 必须等待 Lead 的 shutdown_request，不要主动退出
 
 ## 相关经验（从历史中学习）
 
@@ -557,11 +715,12 @@ SendMessage(
 ⚠️ 如果不执行状态同步，工作包将被视为未完成！
 
 ## 重要提醒
-- **优先认领低 ID 任务** (如 Task #1 优先于 Task #2)
+- **你只处理一个任务** — 完成后等待 shutdown，不要查找其他任务
 - 完成后必须执行测试验证
 - 如遇阻塞问题，在任务描述中说明阻塞原因
 - 不要跳过任何验收标准
-- 任务完成后立即更新状态，方便其他 Teamee 认领依赖任务
+- 任务完成后立即更新状态为 completed，方便 Lead 检测并解锁依赖任务
+- 收到 shutdown_request 后立即响应，不要延迟
 ```
 
 ---
@@ -630,9 +789,10 @@ SendMessage(
 ┌─────────────────────────────────────────────────┐
 │              Task List (共享状态)                │
 │                                                 │
-│  Task #1: 状态=completed, Owner=scene-expert    │
-│  Task #2: 状态=in_progress, Owner=script-expert │
-│  Task #3: 状态=pending, blockedBy=[#2]          │
+│  Task #1: 状态=completed, Owner=scene-expert-t1 │
+│  Task #2: 状态=in_progress, Owner=script-expert-t2 │
+│  Task #3: 状态=pending, blockedBy=[#2], Owner="" │
+│  (Task #3 等待 #2 完成后 Lead 创建专用 Teamee)    │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -832,10 +992,11 @@ docs/reports/2026-03-14_WP-073-075_execution_report.md
 ### Teamee 执行失败
 ```
 ⚠️ Task #2 执行失败
-Owner: godot-script-expert
+Owner: godot-script-expert-t2
 状态: in_progress (卡住)
-处理: Lead 发送 shutdown_request 关闭 Teamee
-      创建新任务重试或人工介入
+处理: Lead 发送 shutdown_request 即时销毁该 Teamee
+      从 teamee_map 移除映射
+      创建新 Teamee 重试 或 人工介入
 ```
 
 ### 部分任务超时
@@ -866,12 +1027,13 @@ Owner: godot-script-expert
 
 1. **TeamCreate 是必须的** - 没有团队就没有共享 Task List
 2. **blockedBy 自动阻塞** - 依赖机制由 Task List 自动处理
-3. **Teamee 自主认领** - Lead 不需要手动分配任务
-4. **角色匹配提升质量** - 专业角色比通用代理更高效
-5. **记忆注入避免踩坑** - 从历史经验中学习
-6. **经验沉淀形成闭环** - 每次执行都让角色更聪明
-7. **🔴 TeamDelete 是强制的** - 无论成功/失败/超时，都必须执行清理！
-8. **🔴 监控循环不可跳过** - Lead 必须进入 Step 6.5 监控循环
+3. **Lead 按需分配 (1:1)** - 每个 WP 由 Lead 创建专用 Teamee 并预分配，禁止一个 Teamee 处理多个 WP
+4. **即时销毁** - Teamee 完成任务后立即销毁释放资源，不等到全部完成
+5. **角色匹配提升质量** - 专业角色比通用代理更高效
+6. **记忆注入避免踩坑** - 从历史经验中学习
+7. **经验沉淀形成闭环** - 每次执行都让角色更聪明
+8. **🔴 TeamDelete 是强制的** - 无论成功/失败/超时，都必须执行清理！
+9. **🔴 监控循环不可跳过** - Lead 必须进入 Step 6.5 监控循环，负责动态创建和即时销毁
 
 ## Cleanup Guarantee (清理保障)
 
@@ -879,10 +1041,10 @@ Owner: godot-script-expert
 ┌─────────────────────────────────────────────────────────────┐
 │                    强制清理检查点                             │
 │                                                             │
-│  ✅ 正常完成 → Step 6.5 检测 → Step 7 清理 → TeamDelete      │
-│  ✅ 部分失败 → Step 6.5 检测 → Step 7 清理 → TeamDelete      │
-│  ✅ 超时     → Step 6.5 超时 → Step 7 强制清理 → TeamDelete  │
-│  ✅ 异常中断 → 捕获中断    → Step 7 强制清理 → TeamDelete    │
+│  ✅ 正常完成 → Step 6.5 即时销毁 → Step 7 最终清理 → TeamDelete │
+│  ✅ 部分失败 → Step 6.5 即时销毁 → Step 7 最终清理 → TeamDelete │
+│  ✅ 超时     → Step 6.5 超时销毁 → Step 7 强制清理 → TeamDelete │
+│  ✅ 异常中断 → 捕获中断 → Step 7 强制销毁残留 → TeamDelete     │
 │                                                             │
 │  ❌ 无任何情况可以跳过 TeamDelete！                          │
 └─────────────────────────────────────────────────────────────┘
@@ -899,8 +1061,9 @@ Owner: godot-script-expert
 | 创建协调 | 无 | TeamCreate |
 | 任务管理 | 主 Agent 手动 | TaskCreate + TaskList |
 | 依赖处理 | 主 Agent 分析 | blockedBy 自动阻塞 |
-| 任务分配 | 主 Agent 指定 | Teamee 自主认领 |
+| 任务分配 | 主 Agent 指定 | Lead 按需创建 + 预分配 (1:1 绑定) |
 | 状态同步 | 无 | TaskList 实时 |
+| Teamee 生命周期 | 无管理 | 按需创建 / 即时销毁 |
 | 清理 | 无 | TeamDelete |
 
 ### 保留的功能
