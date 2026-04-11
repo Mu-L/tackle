@@ -1,8 +1,3 @@
----
-name: split-work-package
-description: Use when user says "拆分工作包", "创建工作包", or needs to break down a task into structured work packages with IDs, estimates, and test cases. This skill creates task definitions ONLY - it does NOT implement them.
----
-
 <SUBAGENT-STOP>
 If you were dispatched as a subagent to execute a specific task, skip this skill.
 </SUBAGENT-STOP>

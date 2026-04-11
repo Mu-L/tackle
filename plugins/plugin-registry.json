@@ -43,6 +43,12 @@
       }
     },
     {
+      "name": "hook-session-start",
+      "source": "hook-session-start",
+      "enabled": true,
+      "config": {}
+    },
+    {
       "name": "skill-task-creator",
       "source": "skill-task-creator",
       "enabled": true,

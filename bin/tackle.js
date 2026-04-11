@@ -75,12 +75,14 @@ function cmdBuild() {
 
   if (result.success) {
     builder.updateSettings(targetRoot, packageRoot);
+    builder.injectClaudeMdRules(targetRoot);
   }
 
   console.log(result.summary);
 
   if (result.success) {
     console.log('[tackle-harness] Settings updated: .claude/settings.json');
+    console.log('[tackle-harness] CLAUDE.md rules injected.');
     console.log('[tackle-harness] Done! Skills are ready to use.');
   }
 

@@ -169,13 +169,13 @@ npx tackle-harness validate   # 验证插件完整性
 
 ## 插件架构
 
-Tackle Harness 包含四类插件，共 18 个：
+Tackle Harness 包含四类插件，共 19 个：
 
 | 类型 | 数量 | 作用 |
 |------|------|------|
 | Skill | 12 | 可执行技能，Claude Code 直接调用 |
 | Provider | 3 | 状态存储、角色注册、记忆存储 |
-| Hook | 1 | 技能门控，拦截编辑操作和技能调用 |
+| Hook | 2 | 技能门控 + 会话启动时注入 plan-mode 规则 |
 | Validator | 2 | 文档同步验证、工作包验证 |
 
 > 插件依赖关系和开发指南请参阅 [docs/plugin-development.md](docs/plugin-development.md)
@@ -200,6 +200,9 @@ your-project/
       skill-experience-logger/skill.md
       skill-agent-dispatcher/skill.md
       skill-workflow-orchestrator/skill.md
+    hooks/                           # 2 个 hook
+      hook-skill-gate/index.js
+      hook-session-start/index.js
     settings.json                    # 自动注册的 hooks
 ```
 
@@ -232,7 +235,8 @@ npm uninstall tackle-harness
 
 ### settings.json 中的 hooks 是什么？
 
-`tackle-harness build` 会自动向 `.claude/settings.json` 注入两个 hook：
+`tackle-harness build` 会自动向 `.claude/settings.json` 注入三个 hook：
+- `SessionStart` — 会话启动时扫描 plan-mode 技能，将优先级规则注入 system-reminder，确保任务创建类技能强制进入 Plan 模式
 - `PreToolUse(Edit|Write)` — 在特定状态下阻止文件编辑
 - `PostToolUse(Skill)` — 技能调用后更新状态
 

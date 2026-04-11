@@ -1,0 +1,7 @@
+{
+  "name": "hook-session-start",
+  "version": "1.0.0",
+  "type": "hook",
+  "description": "SessionStart hook - 注入 plan-mode 优先级规则到 system-reminder，确保任务创建类 skill 强制进入 Plan 模式",
+  "provides": ["hook:session-start"]
+}

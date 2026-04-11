@@ -1,9 +1,3 @@
----
-name: task-creator
-description: Use when user says "创建任务", "新建任务", "添加任务", or needs to create a new task/work package. This skill creates task definitions ONLY - it does NOT implement them.
-plan_mode_required: true
----
-
 <STOP>
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║  🛑 MANDATORY STOP POINT - 文档优先模式                                      ║

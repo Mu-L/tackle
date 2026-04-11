@@ -167,13 +167,13 @@ Requirement → Plan(P0) → Review(P1) → Execute(P2) → Verify(P3) → Repor
 
 ## Plugin Architecture
 
-Tackle Harness contains 4 plugin types, 18 plugins total:
+Tackle Harness contains 4 plugin types, 19 plugins total:
 
 | Type | Count | Purpose |
 |------|-------|---------|
 | Skill | 12 | Executable skills, directly callable by Claude Code |
 | Provider | 3 | State store, role registry, memory store |
-| Hook | 1 | Skill gate, intercepts edit operations and skill calls |
+| Hook | 2 | Skill gate + session-start plan-mode rule injection |
 | Validator | 2 | Document sync validation, work package validation |
 
 > For plugin dependency graph and development guide, see [docs/plugin-development.md](docs/plugin-development.md)
@@ -198,6 +198,9 @@ your-project/
       skill-experience-logger/skill.md
       skill-agent-dispatcher/skill.md
       skill-workflow-orchestrator/skill.md
+    hooks/                           # 2 hooks
+      hook-skill-gate/index.js
+      hook-session-start/index.js
     settings.json                    # Auto-registered hooks
 ```
 
@@ -230,7 +233,8 @@ Skill files remain in `.claude/skills/`. Delete manually if needed.
 
 ### What are the hooks in settings.json?
 
-`tackle-harness build` automatically injects two hooks into `.claude/settings.json`:
+`tackle-harness build` automatically injects three hooks into `.claude/settings.json`:
+- `SessionStart` — On session startup, scans plan-mode skills and injects priority rules into system-reminder, ensuring task-creation skills enforce Plan mode
 - `PreToolUse(Edit|Write)` — Blocks file edits under certain states
 - `PostToolUse(Skill)` — Updates state after skill calls
 

@@ -1,9 +1,3 @@
----
-name: batch-task-creator
-description: Use when user says "批量创建任务", "批量新建任务", "一次创建多个任务", or provides a list of tasks to create as work packages. This skill creates task definitions ONLY - it does NOT implement them.
-plan_mode_required: true
----
-
 <SUBAGENT-STOP>
 If you were dispatched as a subagent to execute a specific task, skip this skill.
 </SUBAGENT-STOP>

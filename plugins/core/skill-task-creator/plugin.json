@@ -9,5 +9,7 @@
   "metadata": {
     "gatedByCode": true
   },
-  "config": {}
+  "config": {
+    "plan_mode_required": true
+  }
 }
