@@ -119,6 +119,18 @@
       "source": "skill-workflow-orchestrator",
       "enabled": true,
       "config": {}
+    },
+    {
+      "name": "provider-watchdog",
+      "source": "provider-watchdog",
+      "enabled": false,
+      "config": {}
+    },
+    {
+      "name": "skill-watchdog-manager",
+      "source": "skill-watchdog-manager",
+      "enabled": false,
+      "config": {}
     }
   ]
 }

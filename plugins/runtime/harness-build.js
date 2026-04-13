@@ -496,6 +496,7 @@ HarnessBuild.prototype._buildValidatorPlugin = function _buildValidatorPlugin(na
 /**
  * Build a provider plugin.
  * Provider plugins are runtime-only, no native Claude Code output.
+ * If metadata.deploy_assets is true, copy assets/ directory to .claude/{deploy_path}/.
  *
  * @param {string} name
  * @param {string} pluginDir
@@ -503,13 +504,30 @@ HarnessBuild.prototype._buildValidatorPlugin = function _buildValidatorPlugin(na
  * @returns {{ name: string, type: string, outputPath: string, files: string[] }}
  */
 HarnessBuild.prototype._buildProviderPlugin = function _buildProviderPlugin(name, pluginDir, meta) {
-  this._log('info', '  -> Provider plugin (no native output, registered internally)');
+  var files = [];
+
+  // Check for asset deployment
+  if (meta.metadata && meta.metadata.deploy_assets) {
+    var assetsDir = path.join(pluginDir, 'assets');
+    var deployPath = meta.metadata.deploy_path || name;
+    var outputDir = path.join(this._rootDir, '.claude', deployPath);
+
+    if (fs.existsSync(assetsDir)) {
+      this._log('info', '  -> Deploying provider assets to ' + outputDir);
+      files = this._copyDirectory(assetsDir, outputDir);
+      this._log('info', '  -> ' + files.length + ' files deployed');
+    } else {
+      this._log('warn', '  -> deploy_assets set but no assets/ directory found in ' + pluginDir);
+    }
+  } else {
+    this._log('info', '  -> Provider plugin (no native output, registered internally)');
+  }
 
   return {
     name: name,
     type: 'provider',
-    outputPath: '(internal)',
-    files: [],
+    outputPath: files.length > 0 ? path.join(this._rootDir, '.claude', deployPath) : '(internal)',
+    files: files,
   };
 };
 
@@ -697,6 +715,38 @@ HarnessBuild.prototype._mkdirRecursive = function _mkdirRecursive(dirPath) {
     this._mkdirRecursive(parent);
   }
   fs.mkdirSync(dirPath);
+};
+
+/**
+ * Recursively copy a directory.
+ * @param {string} srcDir - Source directory
+ * @param {string} destDir - Destination directory
+ * @returns {string[]} List of copied file paths
+ */
+HarnessBuild.prototype._copyDirectory = function _copyDirectory(srcDir, destDir) {
+  var copiedFiles = [];
+
+  if (!fs.existsSync(destDir)) {
+    this._mkdirRecursive(destDir);
+  }
+
+  var entries = fs.readdirSync(srcDir);
+  for (var i = 0; i < entries.length; i++) {
+    var entry = entries[i];
+    var srcPath = path.join(srcDir, entry);
+    var destPath = path.join(destDir, entry);
+    var stat = fs.statSync(srcPath);
+
+    if (stat.isDirectory()) {
+      var subFiles = this._copyDirectory(srcPath, destPath);
+      copiedFiles = copiedFiles.concat(subFiles);
+    } else {
+      fs.writeFileSync(destPath, fs.readFileSync(srcPath));
+      copiedFiles.push(destPath);
+    }
+  }
+
+  return copiedFiles;
 };
 
 /**

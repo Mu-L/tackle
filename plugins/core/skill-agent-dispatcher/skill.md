@@ -279,10 +279,31 @@ loop_interval = 30  # 秒
 max_wait_time = 7200  # 2 小时
 shutdown_timeout = 15  # 等待 Teamee shutdown 响应的超时
 
+# 初始化守护进程相关状态
+loop_iteration = 0
+processed_action_ids = []  # 跟踪已处理的守护进程指令
+
 start_time = now()
 while (now() - start_time) < max_wait_time:
+    loop_iteration += 1
     # ---- Phase A: 获取任务状态 ----
     tasks = TaskList()
+
+    # ---- Phase A.1: 写入守护进程心跳 (DISP-001) ----
+    # 每轮监控循环迭代写入心跳文件，供外部守护进程监控
+    heartbeat_data = {
+        "session_id": "{team_name}",
+        "pid": get_process_pid(),  # 通过 Bash `echo $$` 或 process.pid 获取
+        "team_name": "{team_name}",
+        "loop_iteration": loop_iteration,
+        "total_tasks": len(tasks),
+        "completed_tasks": count(t.status == "completed" for t in tasks),
+        "in_progress_tasks": count(t.status == "in_progress" for t in tasks),
+        "pending_tasks": count(t.status == "pending" for t in tasks),
+        "last_update": now_iso8601(),
+        "status": "monitoring"  # monitoring / shutting_down / completed
+    }
+    Write(file_path=".claude-daemon/heartbeat.json", content=json_dumps(heartbeat_data))
 
     # ---- Phase B: 即时销毁已完成的 Teamee ----
     for task in tasks:
@@ -300,6 +321,10 @@ while (now() - start_time) < max_wait_time:
             # B3. 从映射表移除
             del teamee_map[task.id]
             print(f"Teamee {teamee_name} 已销毁并从映射表移除")
+
+            # B4. 更新任务状态文件 (DISP-002)
+            # Teamee 完成后更新对应的 task-{id}.json 文件
+            update_task_file(task.id, status="completed")
 
     # ---- Phase C: 按需创建 Teamee 处理 newly-unblocked 任务 ----
     for task in tasks:
@@ -333,11 +358,131 @@ while (now() - start_time) < max_wait_time:
             teamee_map[task.id] = teamee_name
             print(f"为任务 {task.id} 创建专用 Teamee: {teamee_name}")
 
+            # C6. 创建任务状态文件 (DISP-002)
+            # Teamee 创建后初始化对应的 task-{id}.json 文件
+            create_task_file(
+                task_id=task.id,
+                wp_id=assignment.wp_id,
+                teamee_name=teamee_name,
+                status="in_progress",
+                complexity_score=assignment.complexity_score
+            )
+
+    # ---- Phase D.1: 读取守护进程指令 (DISP-003) ----
+    # 在判断退出条件前，读取守护进程下发的指令
+    daemon_actions_path = ".claude-daemon/daemon-actions.json"
+    if file_exists(daemon_actions_path):
+        actions_data = Read(file_path=daemon_actions_path)
+        actions = json_loads(actions_data).get("actions", [])
+
+        for action in actions:
+            # 检查指令是否已被处理
+            if action.get("id") in processed_action_ids:
+                continue
+
+            target_task_id = action.get("target_task")
+            action_type = action.get("action")
+            strategy = action.get("strategy", "full_restart")
+            reason = action.get("reason", "")
+
+            if action_type == "restart":
+                # 重启指令: shutdown 旧 Teamee → 创建新 Teamee
+                if target_task_id in teamee_map:
+                    old_teamee = teamee_map[target_task_id]
+
+                    # D1a. Shutdown 旧 Teamee
+                    SendMessage(to=old_teamee, message={
+                        "type": "shutdown_request",
+                        "reason": f"守护进程指令: {reason}",
+                        "request_id": f"daemon-restart-{target_task_id}-{timestamp()}"
+                    })
+                    del teamee_map[target_task_id]
+
+                    # D1b. 根据策略创建新 Teamee
+                    assignment = wp_assignments[target_task_id]
+                    new_teamee_name = f"{assignment.role_id}-t{target_task_id}-retry"
+
+                    if strategy == "checkpoint_resume":
+                        # 复杂任务: 注入已完成文件上下文
+                        context = action.get("context", {})
+                        prompt = build_resume_prompt(
+                            teamee_name=new_teamee_name,
+                            task_id=target_task_id,
+                            role_prompt=assignment.role_prompt,
+                            completed_files=context.get("completed_files", []),
+                            remaining=context.get("remaining", [])
+                        )
+                    else:  # full_restart
+                        # 简单任务: 从头执行
+                        prompt = build_single_task_prompt(
+                            teamee_name=new_teamee_name,
+                            task_id=target_task_id,
+                            role_prompt=assignment.role_prompt,
+                            memories=assignment.memories,
+                            wp_doc_path=assignment.wp_doc_path
+                        )
+
+                    # D1c. 创建新 Teamee
+                    Agent(
+                        name=new_teamee_name,
+                        team_name="{team_name}",
+                        subagent_type="general-purpose",
+                        prompt=prompt
+                    )
+                    teamee_map[target_task_id] = new_teamee_name
+
+                    # D1d. 更新重试计数
+                    update_task_file(target_task_id, increment_retry=True)
+
+                # 标记指令已处理
+                processed_action_ids.append(action.get("id"))
+
+            elif action_type == "abort":
+                # 中止单个任务
+                if target_task_id in teamee_map:
+                    teamee_name = teamee_map[target_task_id]
+                    SendMessage(to=teamee_name, message={
+                        "type": "shutdown_request",
+                        "reason": f"守护进程中止指令: {reason}",
+                        "request_id": f"daemon-abort-{target_task_id}-{timestamp()}"
+                    })
+                    del teamee_map[target_task_id]
+                    update_task_file(target_task_id, status="failed")
+                processed_action_ids.append(action.get("id"))
+
+            elif action_type == "pause":
+                # 暂停创建新 Teamee（已有 Teamee 继续运行）
+                global_pause_flag = True
+                processed_action_ids.append(action.get("id"))
+
+            elif action_type == "abort_all":
+                # 全局中止: shutdown 所有 Teamee，终止监控循环
+                for task_id, teamee_name in teamee_map.items():
+                    SendMessage(to=teamee_name, message={
+                        "type": "shutdown_request",
+                        "reason": "守护进程全局中止指令",
+                        "request_id": f"daemon-abort-all-{task_id}-{timestamp()}"
+                    })
+                teamee_map.clear()
+                print("收到 abort_all 指令，终止监控循环")
+                processed_action_ids.append(action.get("id"))
+                break  # 跳出监控循环
+
+        # D1e. 回写已处理的 iteration
+        if actions:
+            Write(file_path=daemon_actions_path, content=json_dumps({
+                "actions": [a for a in actions if a.get("id") not in processed_action_ids],
+                "last_processed_iteration": loop_iteration
+            }))
+
     # ---- Phase D: 判断退出条件 ----
     completed = count(status == "completed")
     total = len(tasks)
 
     if completed == total:
+        # 写入最终心跳 (DISP-001): 状态为 completed
+        heartbeat_data["status"] = "completed"
+        Write(file_path=".claude-daemon/heartbeat.json", content=json_dumps(heartbeat_data))
         print("所有任务完成，退出监控循环")
         break
 
@@ -352,6 +497,9 @@ while (now() - start_time) < max_wait_time:
 
 # 超时处理
 if (now() - start_time) >= max_wait_time:
+    # 写入最终心跳 (DISP-001): 状态为 shutting_down
+    heartbeat_data["status"] = "shutting_down"
+    Write(file_path=".claude-daemon/heartbeat.json", content=json_dumps(heartbeat_data))
     print("监控超时，强制执行清理")
     for task_id, teamee_name in teamee_map.items():
         SendMessage(to=teamee_name, message={
@@ -379,6 +527,129 @@ def is_unblocked(task):
 - **Phase B (即时销毁)** 在 Phase C (创建) 之前执行，确保资源先释放再分配
 - 每次循环都检查 `teamee_map` 防止重复创建/重复销毁
 - 异常检测同时检查 `teamee_map` 是否为空，避免误判
+
+---
+
+### Step 6.6: 守护进程辅助函数 (DISP-001/002/003)
+
+以下辅助函数用于守护进程集成，在监控循环中被调用：
+
+#### get_process_pid()
+获取当前进程 PID，用于心跳写入。
+
+```
+def get_process_pid():
+    """获取当前进程 PID"""
+    # 方法 1: 通过 Bash 工具
+    result = Bash(command="echo $$")
+    return int(result.strip())
+
+    # 方法 2: 通过环境变量 (如果可用)
+    # return int(os.getenv("PID", "unknown"))
+```
+
+#### now_iso8601()
+获取当前时间的 ISO 8601 格式字符串。
+
+```
+def now_iso8601():
+    """返回当前时间的 ISO 8601 格式字符串"""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+```
+
+#### create_task_file()
+创建任务状态文件，用于守护进程监控单个任务进度。
+
+```
+def create_task_file(task_id, wp_id, teamee_name, status, complexity_score):
+    """创建或初始化任务状态文件"""
+    task_data = {
+        "task_id": str(task_id),
+        "wp_id": wp_id,
+        "teamee_name": teamee_name,
+        "status": status,
+        "complexity_score": complexity_score,
+        "progress_markers": [
+            {
+                "time": now_iso8601(),
+                "action": "started",
+                "detail": f"Teamee {teamee_name} 开始执行"
+            }
+        ],
+        "retry_count": 0,
+        "max_retries": 3,
+        "retry_history": [],
+        "started_at": now_iso8601(),
+        "last_update": now_iso8601()
+    }
+    Write(
+        file_path=f".claude-daemon/tasks/task-{task_id}.json",
+        content=json_dumps(task_data, indent=2)
+    )
+```
+
+#### update_task_file()
+更新任务状态文件，支持状态更新、追加进度标记、递增重试计数。
+
+```
+def update_task_file(task_id, status=None, increment_retry=False, append_marker=None):
+    """更新任务状态文件"""
+    task_path = f".claude-daemon/tasks/task-{task_id}.json"
+    existing_data = Read(file_path=task_path)
+    task_data = json_loads(existing_data)
+
+    # 更新状态
+    if status:
+        task_data["status"] = status
+
+    # 递增重试计数
+    if increment_retry:
+        task_data["retry_count"] += 1
+        task_data["retry_history"].append({
+            "time": now_iso8601(),
+            "iteration": loop_iteration
+        })
+
+    # 追加进度标记
+    if append_marker:
+        task_data["progress_markers"].append({
+            "time": now_iso8601(),
+            "action": append_marker.get("action", "update"),
+            "detail": append_marker.get("detail", "")
+        })
+
+    task_data["last_update"] = now_iso8601()
+    Write(file_path=task_path, content=json_dumps(task_data, indent=2))
+```
+
+#### build_resume_prompt()
+为复杂任务的 checkpoint_resume 重启策略构建 prompt，注入已完成文件上下文。
+
+```
+def build_resume_prompt(teamee_name, task_id, role_prompt, completed_files, remaining):
+    """为 checkpoint_resume 重启策略构建 prompt"""
+    return f'''你是 {teamee_name}，是一名 {role_prompt}。
+
+## 任务重启 (Checkpoint Resume)
+
+你正在重新执行任务 #{task_id}。之前的执行已完成部分工作，你将从断点继续。
+
+### 已完成的文件
+{chr(10).join(f"- {f}" for f in completed_files)}
+
+### 待完成的工作
+{chr(10).join(f"- {r}" for r in remaining)}
+
+请阅读已完成文件的最新状态，然后继续执行剩余工作。
+不要重复已完成的工作，直接从断点继续。
+'''
+```
+
+**进度标记追加时机**:
+1. Teamee 发送消息时 (通过 SendMessage 监听)
+2. 检测到文件变更时 (通过 Git 状态或文件系统监听)
+3. 任务状态变更时 (完成/失败/重试)
 
 ### Step 7: 清理团队
 

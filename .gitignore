@@ -1,6 +1,7 @@
 # Claude Code (build output + runtime)
 .claude/
 .claude-state
+.claude-daemon/
 CLAUDE.md
 
 # Docs (only keep config-reference and best-practices)

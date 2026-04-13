@@ -1,0 +1,32 @@
+{
+  "daemon": {
+    "mode": "background"
+  },
+  "heartbeat_dir": ".claude-daemon",
+  "check_interval_sec": 30,
+  "timeouts": {
+    "task_stalled_min": 15,
+    "session_stalled_min": 10,
+    "restart_cooldown_min": 2,
+    "marker_window_min": 5
+  },
+  "retry": {
+    "max_retries": 3,
+    "timeout_scale": [1.0, 1.33, 2.0],
+    "cooldown_min": [0, 2, 5]
+  },
+  "circuit_breaker": {
+    "consecutive_failures_threshold": 3,
+    "total_retries_multiplier": 2,
+    "cooldown_after_break_min": 15
+  },
+  "process": {
+    "kill_timeout_sec": 10,
+    "restart_command": "claude --skill agent-dispatcher"
+  },
+  "logging": {
+    "level": "info",
+    "max_file_size_mb": 10,
+    "max_files": 3
+  }
+}
