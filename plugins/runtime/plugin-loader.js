@@ -15,6 +15,8 @@
 var fs = require('fs');
 var path = require('path');
 var { PluginState, PluginType, SkillPlugin, HookPlugin, ValidatorPlugin, ProviderPlugin } = require('../contracts/plugin-interface');
+var { HookDispatcher } = require('./hook-dispatcher');
+var { ValidatorPipeline } = require('./validator-pipeline');
 
 class PluginLoader {
   /**
@@ -39,6 +41,12 @@ class PluginLoader {
     this._pluginConfigs = new Map();
     /** @type {object} registry data */
     this._registry = null;
+    /** @type {Map<string, object>} provider registry - factory outputs */
+    this._providerRegistry = new Map();
+    /** @type {HookDispatcher} hook dispatcher for internal mode */
+    this._hookDispatcher = null;
+    /** @type {ValidatorPipeline} validator pipeline for automated validation */
+    this._validatorPipeline = null;
   }
 
   // --- public API ---
@@ -102,6 +110,7 @@ class PluginLoader {
   /**
    * Activate a single loaded plugin.
    * Creates PluginContext and injects EventBus, StateStore, ConfigManager, Logger.
+   * For Provider plugins, calls factory() and registers the output.
    * @param {string} name - plugin name
    */
   async activate(name) {
@@ -129,10 +138,46 @@ class PluginLoader {
     }
     plugin.state = PluginState.ACTIVATED;
 
+    // For Provider plugins, call factory() and register the output
+    if (plugin.type === PluginType.PROVIDER && typeof plugin.factory === 'function') {
+      var providerInstance = await plugin.factory(context);
+      // Register under provides names (e.g. "provider:state-store") and fallback to plugin name
+      var provides = plugin.provides || [];
+      var registeredAs = [];
+      for (var i = 0; i < provides.length; i++) {
+        var provName = provides[i].replace(/^provider:/, '');
+        this._providerRegistry.set(provName, providerInstance);
+        registeredAs.push(provName);
+      }
+      // Also register under full plugin name for backward compat
+      this._providerRegistry.set(name, providerInstance);
+      registeredAs.push(name);
+      this._log('info', 'Provider "' + name + '" factory() called and registered as: ' + registeredAs.join(', '));
+    }
+
     if (this._eventBus) {
       this._eventBus.emit('plugin:activated', { pluginName: name });
     }
     this._log('info', 'Plugin "' + name + '" activated');
+
+    // Initialize HookDispatcher after first hook is activated
+    if (plugin.type === PluginType.HOOK && !this._hookDispatcher) {
+      this._hookDispatcher = new HookDispatcher({
+        pluginLoader: this,
+        logger: this._logger,
+      });
+      this._log('info', 'HookDispatcher initialized');
+    }
+
+    // Initialize ValidatorPipeline after first validator is activated
+    if (plugin.type === PluginType.VALIDATOR && !this._validatorPipeline) {
+      this._validatorPipeline = new ValidatorPipeline({
+        pluginLoader: this,
+        eventBus: this._eventBus,
+        logger: this._logger,
+      });
+      this._log('info', 'ValidatorPipeline initialized');
+    }
   }
 
   /**
@@ -194,6 +239,57 @@ class PluginLoader {
    */
   getLoadedNames() {
     return Array.from(this.loadedPlugins.keys());
+  }
+
+  /**
+   * Get a registered Provider instance by name.
+   * @param {string} name - provider name
+   * @returns {object|undefined} Provider instance from factory()
+   */
+  getProvider(name) {
+    return this._providerRegistry.get(name);
+  }
+
+  /**
+   * Get all registered Provider names.
+   * @returns {string[]}
+   */
+  getRegisteredProviders() {
+    return Array.from(this._providerRegistry.keys());
+  }
+
+  /**
+   * Get the HookDispatcher instance for internal hook execution.
+   * Returns null if no hooks have been activated yet.
+   * @returns {HookDispatcher|null}
+   */
+  getHookDispatcher() {
+    return this._hookDispatcher;
+  }
+
+  /**
+   * Get the ValidatorPipeline instance for automated validation.
+   * Returns null if no validators have been activated yet.
+   * @returns {ValidatorPipeline|null}
+   */
+  getValidatorPipeline() {
+    return this._validatorPipeline;
+  }
+
+  /**
+   * Dispatch a hook event using internal mode.
+   * Shortcut for HookDispatcher.dispatch() with mode='internal'.
+   *
+   * @param {object} context - hook context { event, tool?, skill? }
+   * @returns {Promise<{ allowed: boolean, results?, reason? }>}
+   */
+  async dispatchHook(context) {
+    if (!this._hookDispatcher) {
+      this._log('warn', 'HookDispatcher not initialized, cannot dispatch hook');
+      return { allowed: true };
+    }
+    context.mode = 'internal';
+    return await this._hookDispatcher.dispatch(context);
   }
 
   // --- internal ---
@@ -369,6 +465,9 @@ class PluginLoader {
     // Set common properties
     pluginInstance.config = config || {};
     pluginInstance.state = PluginState.LOADED;
+    if (pluginJson.provides) {
+      pluginInstance.provides = pluginJson.provides;
+    }
 
     this.loadedPlugins.set(name, pluginInstance);
   }
@@ -389,37 +488,14 @@ class PluginLoader {
   }
 
   /**
-   * Get a loaded Provider plugin by name and call its factory() method.
+   * Get a registered Provider instance by name.
+   * Returns the factory output from the provider registry.
    * Used by PluginContext.getProvider().
    * @param {string} name - provider name
-   * @returns {Promise<object>} Provider instance from factory() or undefined
+   * @returns {Promise<object|undefined>} Provider instance or undefined
    */
   async _getProvider(name) {
-    var plugin = this.loadedPlugins.get(name);
-    if (!plugin) {
-      return undefined;
-    }
-    if (plugin.type !== PluginType.PROVIDER) {
-      return undefined;
-    }
-    if (plugin.state !== PluginState.ACTIVATED) {
-      this._log('warn', 'Provider "' + name + '" is not activated yet');
-      return undefined;
-    }
-    if (typeof plugin.factory === 'function') {
-      var PluginContext = require('../contracts/plugin-interface').PluginContext;
-      var runtime = {
-        eventBus: this._eventBus,
-        stateStore: this._stateStore,
-        configManager: this._configManager,
-        logger: this._logger ? this._logger.createChild(name) : null,
-        getProvider: this._getProvider.bind(this),
-        loadedPlugins: this.loadedPlugins,
-      };
-      var context = new PluginContext(name, runtime);
-      return await plugin.factory(context);
-    }
-    return plugin;
+    return this._providerRegistry.get(name);
   }
 
   /**
