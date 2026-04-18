@@ -39,6 +39,7 @@ var VALID_PLUGIN_TYPES = ['skill', 'hook', 'validator', 'provider'];
  * @param {string} [options.pluginsDir]     - override path to plugins/core/
  * @param {string} [options.outputSkillsDir] - override output .claude/skills/
  * @param {string} [options.outputHooksDir]  - override output .claude/hooks/
+ * @param {boolean} [options.verbose]       - enable verbose logging
  */
 function HarnessBuild(options) {
   options = options || {};
@@ -48,6 +49,7 @@ function HarnessBuild(options) {
   this._pluginsDir = options.pluginsDir || path.join(this._rootDir, 'plugins', 'core');
   this._outputSkillsDir = options.outputSkillsDir || path.join(this._rootDir, '.claude', 'skills');
   this._outputHooksDir = options.outputHooksDir || path.join(this._rootDir, '.claude', 'hooks');
+  this._verbose = options.verbose || false;
 
   /** @type {object[]} validation errors collected during --validate */
   this._validationErrors = [];
@@ -810,6 +812,10 @@ HarnessBuild.prototype._copyDirectory = function _copyDirectory(srcDir, destDir)
  * @param {string} message
  */
 HarnessBuild.prototype._log = function _log(level, message) {
+  // Skip info messages unless verbose mode is enabled
+  if (level === 'info' && !this._verbose) {
+    return;
+  }
   var prefix = '[harness-build] [' + level + ']';
   if (level === 'error') {
     console.error(prefix, message);

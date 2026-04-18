@@ -9,6 +9,8 @@ docs/*
 !docs/config-reference.md
 !docs/best-practices.md
 !docs/ai_workflow.md
+!docs/installation.md
+!docs/plugin-development.md
 task.md
 CHANGELOG.md
 
