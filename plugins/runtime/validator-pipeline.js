@@ -415,9 +415,13 @@ ValidatorPipeline.prototype._filterValidatorsForPhase = function _filterValidato
     }
 
     // Check if validator has explicit phase targeting
-    var targets = validator.targets || validator.metadata && validator.metadata.targets;
+    // First check metadata.targets (from plugin.json), then fall back to instance.targets
+    var targets = validator.metadata && validator.metadata.targets;
+    if (!targets || (Array.isArray(targets) && targets.length === 0)) {
+      targets = validator.targets;
+    }
 
-    if (targets && Array.isArray(targets)) {
+    if (targets && Array.isArray(targets) && targets.length > 0) {
       // Check if current phase is in targets
       var targetsLower = targets.map(function (t) { return String(t).toLowerCase(); });
       var phaseLower = phase.toLowerCase();

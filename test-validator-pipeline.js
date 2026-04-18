@@ -174,6 +174,95 @@ async function runTests() {
     testsFailed++;
   }
 
+  // WP-029-T1: 验证 runPostBuildValidators 至少执行 1 个 validator
+  console.log('--- WP-029-T1: runPostBuildValidators 应执行 validator-doc-sync ---');
+  try {
+    var postBuildResult = await validatorPipeline.runPostBuildValidators({
+      mode: ExecutionMode.NON_BLOCKING,
+    });
+    var executedCount = postBuildResult.results.length;
+    console.log('Validators executed: ' + executedCount);
+    if (executedCount >= 1) {
+      // Check if validator-doc-sync is in results
+      var hasDocSync = postBuildResult.results.some(function (r) {
+        return r.validator === 'validator-doc-sync';
+      });
+      if (hasDocSync) {
+        console.log('✓ WP-029-T1 PASSED: validator-doc-sync executed\n');
+        testsPassed++;
+      } else {
+        console.log('✗ WP-029-T1 FAILED: validator-doc-sync not found in results\n');
+        testsFailed++;
+      }
+    } else {
+      console.log('✗ WP-029-T1 FAILED: No validators executed for build phase\n');
+      testsFailed++;
+    }
+  } catch (err) {
+    console.log('✗ WP-029-T1 FAILED: ' + err.message + '\n');
+    testsFailed++;
+  }
+
+  // WP-029-T2: runAllValidators({ phase: 'manual' }) 应执行所有 validators
+  console.log('--- WP-029-T2: Manual phase should execute all validators ---');
+  try {
+    var manualResult = await validatorPipeline.runAllValidators({
+      phase: WorkflowPhase.MANUAL,
+      mode: ExecutionMode.NON_BLOCKING,
+    });
+    var manualCount = manualResult.results.length;
+    console.log('Validators executed for manual phase: ' + manualCount);
+    if (manualCount >= 2) {
+      // Both validator-doc-sync and validator-work-package should run
+      var hasDocSync = manualResult.results.some(function (r) {
+        return r.validator === 'validator-doc-sync';
+      });
+      var hasWpValidator = manualResult.results.some(function (r) {
+        return r.validator === 'validator-work-package';
+      });
+      if (hasDocSync && hasWpValidator) {
+        console.log('✓ WP-029-T2 PASSED: Both validators executed for manual phase\n');
+        testsPassed++;
+      } else {
+        console.log('✗ WP-029-T2 FAILED: Missing validators (doc-sync: ' + hasDocSync + ', wp-validator: ' + hasWpValidator + ')\n');
+        testsFailed++;
+      }
+    } else {
+      console.log('✗ WP-029-T2 FAILED: Expected at least 2 validators, got ' + manualCount + '\n');
+      testsFailed++;
+    }
+  } catch (err) {
+    console.log('✗ WP-029-T2 FAILED: ' + err.message + '\n');
+    testsFailed++;
+  }
+
+  // WP-029-T3: runAllValidators({ phase: 'wp-create' }) 应仅执行 validator-work-package
+  console.log('--- WP-029-T3: WP-Create phase should only execute validator-work-package ---');
+  try {
+    var wpCreateResult = await validatorPipeline.runAllValidators({
+      phase: WorkflowPhase.WP_CREATE,
+      mode: ExecutionMode.NON_BLOCKING,
+    });
+    var wpCreateCount = wpCreateResult.results.length;
+    console.log('Validators executed for wp-create phase: ' + wpCreateCount);
+    if (wpCreateCount === 1) {
+      var result = wpCreateResult.results[0];
+      if (result.validator === 'validator-work-package') {
+        console.log('✓ WP-029-T3 PASSED: Only validator-work-package executed for wp-create phase\n');
+        testsPassed++;
+      } else {
+        console.log('✗ WP-029-T3 FAILED: Expected validator-work-package, got ' + result.validator + '\n');
+        testsFailed++;
+      }
+    } else {
+      console.log('✗ WP-029-T3 FAILED: Expected exactly 1 validator for wp-create phase, got ' + wpCreateCount + '\n');
+      testsFailed++;
+    }
+  } catch (err) {
+    console.log('✗ WP-029-T3 FAILED: ' + err.message + '\n');
+    testsFailed++;
+  }
+
   // Summary
   console.log('=== Test Summary ===');
   console.log('Passed: ' + testsPassed);

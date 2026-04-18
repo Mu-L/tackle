@@ -462,6 +462,11 @@ class PluginLoader {
       } else {
         throw new Error('Unknown plugin type: ' + type);
       }
+
+      // Attach metadata from plugin.json to instance for all non-skill plugin types
+      if (pluginJson.metadata) {
+        pluginInstance.metadata = pluginJson.metadata;
+      }
     }
 
     // Set common properties
