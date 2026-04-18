@@ -49,6 +49,7 @@ if (flags.root) {
 
 // Subcommand aliases
 if (command === '--validate') command = 'validate';
+if (command === '--validate-config') command = 'validate-config';
 if (command === '--help' || command === '-h') command = 'help';
 
 // ---------------------------------------------------------------------------
@@ -109,7 +110,31 @@ function cmdInit() {
     console.log('[tackle-harness] Created .claude/ directory');
   }
 
-  // 2. Run build
+  // 2. Ensure .claude/config/ directory exists
+  var configDir = path.join(targetRoot, '.claude', 'config');
+  if (!fs.existsSync(configDir)) {
+    fs.mkdirSync(configDir, { recursive: true });
+    console.log('[tackle-harness] Created .claude/config/ directory');
+  }
+
+  // 3. Copy harness-config.yaml template if not exists
+  var targetConfigPath = path.join(configDir, 'harness-config.yaml');
+  var templatePath = path.join(packageRoot, 'templates', 'harness-config.yaml');
+
+  if (!fs.existsSync(targetConfigPath)) {
+    try {
+      var content = fs.readFileSync(templatePath, 'utf-8');
+      fs.writeFileSync(targetConfigPath, content, 'utf-8');
+      console.log('[tackle-harness] Created harness-config.yaml');
+    } catch (err) {
+      console.error('[tackle-harness] Warning: Failed to copy harness-config.yaml template');
+      console.error('[tackle-harness] Error: ' + err.message);
+    }
+  } else {
+    console.log('[tackle-harness] harness-config.yaml already exists, skipping');
+  }
+
+  // 4. Run build
   cmdBuild();
 }
 
@@ -120,6 +145,7 @@ function cmdHelp() {
   console.log('  tackle-harness             Build all plugins (default)');
   console.log('  tackle-harness build       Build all plugins');
   console.log('  tackle-harness validate    Validate plugin.json files');
+  console.log('  tackle-harness validate-config  Validate harness-config.yaml');
   console.log('  tackle-harness init        First-time setup (build + config)');
   console.log('');
   console.log('Options:');
@@ -129,6 +155,27 @@ function cmdHelp() {
   console.log('After running tackle-harness build, skills are available in .claude/skills/');
   console.log('and hooks are registered in .claude/settings.json');
   process.exit(0);
+}
+
+function cmdValidateConfig() {
+  var builder = createBuilder();
+  var result = builder.validateConfig();
+  console.log(result.summary);
+  if (!result.valid) {
+    console.log('');
+    console.log('Errors:');
+    for (var i = 0; i < result.errors.length; i++) {
+      console.log('  - ' + result.errors[i]);
+    }
+  }
+  if (result.warnings.length > 0) {
+    console.log('');
+    console.log('Warnings:');
+    for (var j = 0; j < result.warnings.length; j++) {
+      console.log('  - ' + result.warnings[j]);
+    }
+  }
+  process.exit(result.valid ? 0 : 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +188,9 @@ switch (command) {
     break;
   case 'validate':
     cmdValidate();
+    break;
+  case 'validate-config':
+    cmdValidateConfig();
     break;
   case 'init':
     cmdInit();

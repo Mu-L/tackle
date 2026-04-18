@@ -182,6 +182,14 @@ class EventBus {
     var handlers = this._handlers.get(event);
     return handlers ? handlers.size : 0;
   }
+
+  /**
+   * Getter for event history (for testing compatibility).
+   * @returns {object[]}
+   */
+  get events() {
+    return this._history;
+  }
 }
 
 module.exports = EventBus;

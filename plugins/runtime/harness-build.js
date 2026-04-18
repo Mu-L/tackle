@@ -108,6 +108,29 @@ HarnessBuild.prototype.validate = function validate() {
 HarnessBuild.prototype.build = function build() {
   this._buildResults = [];
 
+  // Validate configuration first
+  var configValidation = this.validateConfig();
+  if (!configValidation.valid) {
+    this._log('error', 'Configuration validation failed:');
+    for (var i = 0; i < configValidation.errors.length; i++) {
+      this._log('error', '  - ' + configValidation.errors[i]);
+    }
+    this._log('error', 'Please fix the configuration errors above and try again.');
+    return {
+      success: false,
+      built: [],
+      errors: [{ plugin: 'config', error: 'Configuration validation failed' }],
+      summary: configValidation.summary,
+    };
+  }
+
+  // Log warnings if any
+  if (configValidation.warnings.length > 0) {
+    for (var j = 0; j < configValidation.warnings.length; j++) {
+      this._log('warn', 'Config warning: ' + configValidation.warnings[j]);
+    }
+  }
+
   var registry = this._readRegistry();
   var pluginEntries = this._getPluginEntries(registry);
 
@@ -122,13 +145,13 @@ HarnessBuild.prototype.build = function build() {
 
   var buildErrors = [];
 
-  for (var i = 0; i < pluginEntries.length; i++) {
+  for (var k = 0; k < pluginEntries.length; k++) {
     try {
-      var result = this._buildPlugin(pluginEntries[i]);
+      var result = this._buildPlugin(pluginEntries[k]);
       this._buildResults.push(result);
     } catch (err) {
       buildErrors.push({
-        plugin: pluginEntries[i].name || 'unknown',
+        plugin: pluginEntries[k].name || 'unknown',
         error: err.message,
       });
     }
@@ -141,6 +164,38 @@ HarnessBuild.prototype.build = function build() {
     success: success,
     built: this._buildResults,
     errors: buildErrors,
+    summary: summary,
+  };
+};
+
+/**
+ * Validate the harness-config.yaml file.
+ * Uses ConfigValidator to check structure and report issues.
+ *
+ * @returns {{ valid: boolean, errors: string[], warnings: string[], summary: string }}
+ */
+HarnessBuild.prototype.validateConfig = function validateConfig() {
+  var ConfigValidator = require('./config-validator');
+  var validator = new ConfigValidator();
+
+  var configPath = path.join(this._rootDir, '.claude', 'config', 'harness-config.yaml');
+
+  var result = validator.validateFile(configPath);
+
+  var summary = '[Config Validation] ';
+  if (result.valid) {
+    summary += 'OK - Configuration is valid';
+    if (result.warnings.length > 0) {
+      summary += ' (' + result.warnings.length + ' warning' + (result.warnings.length > 1 ? 's' : '') + ')';
+    }
+  } else {
+    summary += 'FAILED - ' + result.errors.length + ' error' + (result.errors.length > 1 ? 's' : '') + ' found';
+  }
+
+  return {
+    valid: result.valid,
+    errors: result.errors,
+    warnings: result.warnings,
     summary: summary,
   };
 };
@@ -961,12 +1016,15 @@ HarnessBuild.run = function run(argv) {
   for (var i = 0; i < args.length; i++) {
     if (args[i] === '--validate') {
       mode = 'validate';
+    } else if (args[i] === '--validate-config') {
+      mode = 'validate-config';
     } else if (args[i] === '--help' || args[i] === '-h') {
-      console.log('Usage: node plugins/runtime/harness-build.js [--validate]');
+      console.log('Usage: node plugins/runtime/harness-build.js [OPTIONS]');
       console.log('');
       console.log('Options:');
-      console.log('  --validate    Validate plugin.json files without building');
-      console.log('  --help, -h    Show this help message');
+      console.log('  --validate         Validate plugin.json files without building');
+      console.log('  --validate-config  Validate harness-config.yaml file');
+      console.log('  --help, -h         Show this help message');
       process.exit(0);
     }
   }
@@ -977,6 +1035,24 @@ HarnessBuild.run = function run(argv) {
     var result = builder.validate();
     console.log(result.summary);
     process.exit(result.valid ? 0 : 1);
+  } else if (mode === 'validate-config') {
+    var configResult = builder.validateConfig();
+    console.log(configResult.summary);
+    if (!configResult.valid) {
+      console.log('');
+      console.log('Errors:');
+      for (var j = 0; j < configResult.errors.length; j++) {
+        console.log('  - ' + configResult.errors[j]);
+      }
+    }
+    if (configResult.warnings.length > 0) {
+      console.log('');
+      console.log('Warnings:');
+      for (var k = 0; k < configResult.warnings.length; k++) {
+        console.log('  - ' + configResult.warnings[k]);
+      }
+    }
+    process.exit(configResult.valid ? 0 : 1);
   } else {
     var buildResult = builder.build();
     console.log(buildResult.summary);

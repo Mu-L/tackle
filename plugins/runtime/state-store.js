@@ -274,4 +274,19 @@ class StateStore {
   }
 }
 
-module.exports = { StateStore, FileSystemAdapter, MemoryAdapter };
+// Export both as named exports (for destructuring) and as default
+// Add static properties to StateStore class for convenience access
+StateStore.FileSystemAdapter = FileSystemAdapter;
+StateStore.MemoryAdapter = MemoryAdapter;
+
+// Export both as named exports (for destructuring) and as default
+module.exports = {
+  StateStore: StateStore,
+  FileSystemAdapter: FileSystemAdapter,
+  MemoryAdapter: MemoryAdapter
+};
+
+// Also export as default for direct require compatibility
+module.exports.StateStore = StateStore;
+module.exports.FileSystemAdapter = FileSystemAdapter;
+module.exports.MemoryAdapter = MemoryAdapter;

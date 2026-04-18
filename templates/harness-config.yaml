@@ -1,0 +1,279 @@
+# AI Agent Harness 配置文件
+#
+# 此文件定义了 Tackle Harness 框架的核心配置，包括上下文窗口管理、
+# 工作流定义、角色系统和记忆系统等。
+#
+# 配置优先级（从高到低）：
+#   1. 环境变量 (HARNESS_<KEY>)
+#   2. 本配置文件 (harness-config.yaml)
+#   3. 插件默认值
+#
+# 环境变量示例：
+#   export HARNESS_CONTEXT_WINDOW_MAX_TOKENS=200000
+#   export HARNESS_WORKFLOW__DEFAULT__NAME="自定义工作流"
+#   注意：嵌套键使用双下划线分隔
+
+# ---------------------------------------------------------------------------
+# 上下文窗口配置
+# 控制任务创建技能在分析大文件时的分块读取行为
+# ---------------------------------------------------------------------------
+context_window:
+  # 模型上下文窗口大小（token 数近似值）
+  # 不同模型的上下文窗口大小不同，根据使用的模型调整
+  max_tokens: 200000
+
+  # 为指令和输出预留的 token 数，防止上下文溢出
+  # 建议设置为 max_tokens 的 15-20%
+  safety_margin: 40000
+
+  # 分块读取时每次 Read 调用的最大行数
+  # 当文件超过 medium 阈值时，会按此值分块读取
+  chunk_lines: 500
+
+  # 溢出处理策略
+  # - auto: 根据文件类型和大小自动选择策略
+  # - greedy: 尽可能多地读取内容
+  # - conservative: 优先使用 Grep 扫描，减少读取量
+  strategy: "auto"
+
+  # 文件大小阈值（行数），决定读取策略
+  thresholds:
+    # 小文件阈值：≤ 此值直接读取全文
+    small: 200
+
+    # 中文件阈值：200-此值之间分块读取
+    medium: 800
+
+    # 大文件阈值：超过此值优先 Grep 扫描，定向读取
+    large: 2000
+
+# ---------------------------------------------------------------------------
+# 工作流配置
+# 定义 AI Agent 的执行流程和阶段
+# ---------------------------------------------------------------------------
+workflow:
+  # 默认工作流
+  default:
+    name: "标准开发工作流"
+    description: "从需求到实现的完整开发流程"
+
+    # 工作流阶段定义
+    stages:
+      # 需求分析阶段
+      - id: "planning"
+        name: "需求分析与规划"
+        description: "理解需求，制定实现计划"
+        skills: ["task-creator", "split-work-package"]
+        auto_advance: false
+        checkpoint: true
+
+      # 审核阶段
+      - id: "review"
+        name: "计划审核"
+        description: "人工审核计划，确认实现方案"
+        skills: ["human-checkpoint"]
+        auto_advance: false
+        checkpoint: true
+
+      # 执行阶段
+      - id: "implementation"
+        name: "任务执行"
+        description: "按照计划实现功能"
+        skills: ["agent-dispatcher"]
+        auto_advance: false
+        checkpoint: false
+
+      # 检查阶段
+      - id: "verification"
+        name: "质量检查"
+        description: "验证实现结果，检查验收标准"
+        skills: ["checklist", "experience-logger"]
+        auto_advance: false
+        checkpoint: true
+
+      # 汇报阶段
+      - id: "report"
+        name: "完成汇报"
+        description: "生成完成报告，总结工作成果"
+        skills: ["completion-report"]
+        auto_advance: false
+        checkpoint: false
+
+    # 阶段转换规则
+    transitions:
+      - from: "planning"
+        to: "review"
+        condition: "plan_complete"
+
+      - from: "review"
+        to: "implementation"
+        condition: "plan_approved"
+
+      - from: "implementation"
+        to: "verification"
+        condition: "implementation_complete"
+
+      - from: "verification"
+        to: "report"
+        condition: "verification_passed"
+
+# ---------------------------------------------------------------------------
+# 角色系统配置
+# 定义 AI Agent 角色体系和默认角色
+# ---------------------------------------------------------------------------
+roles:
+  # 角色定义文件目录
+  roles_dir: ".claude/agents/roles"
+
+  # 角色注册表文件
+  registry_file: ".claude/agents/role-registry.yaml"
+
+  # 默认角色映射
+  defaults:
+    # 默认规划者角色
+    planner: "planner"
+
+    # 默认实现者角色
+    implementer: "implementer"
+
+    # 默认审查者角色
+    reviewer: "reviewer"
+
+    # 默认测试者角色
+    tester: "tester"
+
+  # 角色能力矩阵
+  capabilities:
+    # 规划能力角色
+    planning:
+      - "architect"
+      - "planner"
+
+    # 实现能力角色
+    implementation:
+      - "coder"
+      - "implementer"
+
+    # 审查能力角色
+    review:
+      - "reviewer"
+      - "inspector"
+
+# ---------------------------------------------------------------------------
+# 记忆系统配置
+# 控制 AI Agent 的知识存储和检索
+# ---------------------------------------------------------------------------
+memory:
+  # 记忆存储目录
+  storage_dir: ".claude/agents/memories"
+
+  # 记忆文件格式
+  # - yaml: YAML 格式，易读易编辑
+  # - json: JSON 格式，便于程序处理
+  format: "yaml"
+
+  # 自动提取配置
+  auto_extraction:
+    # 是否启用自动记忆提取
+    enabled: true
+
+    # 触发关键词列表
+    # 当对话中包含这些关键词时，自动触发记忆提取
+    trigger_keywords:
+      - "记住"
+      - "学习到"
+      - "经验"
+      - "模式"
+      - "解决方案"
+
+    # 最小置信度阈值
+    # 当记忆提取的置信度低于此值时，需要人工确认
+    min_confidence: 0.7
+
+  # 记忆类型定义
+  types:
+    # 用户记忆
+    user:
+      enabled: true
+      max_entries: 100
+
+    # 项目记忆
+    project:
+      enabled: true
+      max_entries: 500
+
+    # 反馈记忆
+    feedback:
+      enabled: true
+      max_entries: 200
+
+    # 参考记忆
+    reference:
+      enabled: true
+      max_entries: 100
+
+# ---------------------------------------------------------------------------
+# MCP 协议配置
+# 定义 Model Context Protocol 服务器配置
+# ---------------------------------------------------------------------------
+mcp:
+  # MCP 配置文件目录
+  config_dir: ".claude/mcp/servers"
+
+  # MCP 服务器列表
+  servers:
+    # 示例：文件系统服务器
+    - name: "filesystem"
+      type: "stdio"
+      enabled: false
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/allowed/directory"]
+
+    # 示例：GitHub 服务器
+    - name: "github"
+      type: "stdio"
+      enabled: false
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-github"]
+      env:
+        GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+# ---------------------------------------------------------------------------
+# 中间件配置
+# 定义请求处理中间件链
+# ---------------------------------------------------------------------------
+middleware:
+  # 中间件执行顺序
+  chain:
+    - "validator"
+    - "logger"
+    - "rate-limiter"
+
+  # 中间件配置
+  config:
+    # 验证器配置
+    validator:
+      enabled: true
+      strict: false
+
+    # 日志配置
+    logger:
+      enabled: true
+      level: "info"
+      file: ".claude/logs/harness.log"
+
+    # 限流器配置
+    rate-limiter:
+      enabled: false
+      max_requests: 100
+      window_ms: 60000
+
+# ---------------------------------------------------------------------------
+# 插件配置覆盖
+# 为特定插件提供自定义配置
+# ---------------------------------------------------------------------------
+overrides:
+  # 示例：覆盖特定插件的配置
+  # task-creator:
+  #   max_complexity: 10
+  #   auto_split: true

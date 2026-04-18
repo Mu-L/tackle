@@ -1,0 +1,13 @@
+# Development files
+.claude/
+.git/
+CLAUDE.md
+
+# Design & planning docs
+docs/design/
+docs/wp/
+docs/reports/
+task.md
+
+# Test files
+test/

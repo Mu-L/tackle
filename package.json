@@ -2,7 +2,6 @@
   "name": "tackle-harness",
   "version": "0.0.7",
   "description": "Plugin-based AI Agent Harness framework for Claude Code",
-  "main": "plugins/runtime/harness-build.js",
   "bin": {
     "tackle-harness": "bin/tackle.js"
   },
@@ -12,7 +11,11 @@
   ],
   "scripts": {
     "build": "node bin/tackle.js build",
-    "validate": "node bin/tackle.js validate"
+    "validate": "node bin/tackle.js validate",
+    "test": "node --test test/**/*.js",
+    "test:runtime": "node --test test/runtime/*.js",
+    "test:integration": "node --test test/integration/*.js",
+    "test:smoke": "node test/smoke-test.js"
   },
   "keywords": [
     "claude",
@@ -22,8 +25,17 @@
     "plugin",
     "workflow"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anthropics/tackle-harness.git"
+  },
+  "author": "Tackle Contributors",
+  "homepage": "https://github.com/anthropics/tackle-harness#readme",
+  "bugs": {
+    "url": "https://github.com/anthropics/tackle-harness/issues"
+  },
   "license": "MIT",
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }

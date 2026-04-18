@@ -91,11 +91,11 @@ class PluginLoader {
 
       try {
         await this._loadPlugin(name, config);
-        await this.activate(name);
         loaded.push(name);
         if (this._eventBus) {
           this._eventBus.emit('plugin:loaded', { pluginName: name });
         }
+        await this.activate(name);
         this._log('info', 'Plugin "' + name + '" loaded and activated successfully');
       } catch (err) {
         this._log('error', 'Failed to load plugin "' + name + '": ' + err.message);
@@ -351,11 +351,13 @@ class PluginLoader {
     var graph = new Map();
     for (var i = 0; i < pluginNames.length; i++) {
       var name = pluginNames[i];
-      var config = this._pluginConfigs.get(name);
+      var entry = this._pluginConfigs.get(name);
       var deps = [];
 
-      if (config && config.dependencies) {
-        deps = config.dependencies.plugins || config.dependencies || [];
+      // Entry format: { name, source, enabled, config }
+      // Dependencies are in entry.config.dependencies.plugins
+      if (entry && entry.config && entry.config.dependencies) {
+        deps = entry.config.dependencies.plugins || [];
         if (!Array.isArray(deps)) deps = [];
       }
 
