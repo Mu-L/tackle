@@ -267,8 +267,9 @@ workflow:
 
 ## 配置验证
 
-使用 `--validate` 参数验证配置：
+使用 validate 或 validate-config 命令验证：
 
 ```bash
-claude-harness --validate
+tackle-harness validate           # 验证插件格式
+tackle-harness validate-config    # 验证配置文件
 ```

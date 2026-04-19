@@ -194,6 +194,10 @@ cat .claude/settings.json
 | `tackle-harness list` | 列出所有已注册插件 |
 | `tackle-harness version` | 显示版本信息 |
 | `tackle-harness --root <path>` | 指定目标项目路径 |
+| `tackle-harness --verbose` | 显示详细构建输出 |
+| `tackle-harness --no-color` | 禁用彩色输出 |
+| `tackle-harness --help, -h` | 显示帮助信息 |
+| `tackle-harness --version, -v` | 显示版本信息 |
 
 ### 示例
 

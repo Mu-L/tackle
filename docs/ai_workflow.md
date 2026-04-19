@@ -678,8 +678,8 @@ validator-work-package    (无外部依赖)
   │  └── provider  → (内部注册, 无原生输出)                       │
   │                                                              │
   │  命令:                                                       │
-  │  node plugins/runtime/harness-build.js            # 构建    │
-  │  node plugins/runtime/harness-build.js --validate # 仅验证  │
+  │  tackle-harness build       # 构建                              │
+  │  tackle-harness validate    # 仅验证                            │
   │                                                              │
   │  输出: Build Report (插件数/类型/文件数/错误)                 │
   └──────────────────────────────────────────────────────────────┘

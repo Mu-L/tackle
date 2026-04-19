@@ -322,7 +322,7 @@ nested:
     assert.deepStrictEqual(all, {}, 'empty object for missing file');
 
     // Cleanup
-    fs.rmdirSync(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 

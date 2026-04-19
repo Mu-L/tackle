@@ -418,3 +418,150 @@ test.describe('HarnessBuild - Error Handling', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
+
+test.describe('Stale Output Cleanup Logic', () => {
+  // Mirrors the _cleanStaleOutput logic from bin/tackle.js
+  function cleanStaleOutput(pluginsDir, outputDirs, registry) {
+    const enabledNames = {};
+    const disabledNames = {};
+    for (let i = 0; i < registry.plugins.length; i++) {
+      const regName = registry.plugins[i].name;
+      const pDir = path.join(pluginsDir, registry.plugins[i].source || regName);
+      const metaPath = path.join(pDir, 'plugin.json');
+      let name = regName;
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          name = meta.name || regName;
+        } catch (e) {}
+      }
+      if (registry.plugins[i].enabled !== false) {
+        enabledNames[name] = true;
+      } else {
+        disabledNames[name] = true;
+      }
+    }
+
+    const removed = [];
+    for (let d = 0; d < outputDirs.length; d++) {
+      const dir = outputDirs[d];
+      if (!fs.existsSync(dir)) continue;
+      let entries;
+      try { entries = fs.readdirSync(dir); } catch (e) { continue; }
+      for (let e = 0; e < entries.length; e++) {
+        const entryName = entries[e];
+        if (disabledNames[entryName] && !enabledNames[entryName]) {
+          const stalePath = path.join(dir, entryName);
+          fs.rmSync(stalePath, { recursive: true, force: true });
+          removed.push(entryName);
+        }
+      }
+    }
+    return removed;
+  }
+
+  test('should remove output from disabled plugins', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-test-'));
+    const pluginsDir = path.join(tmpDir, 'plugins', 'core');
+    const skillsDir = path.join(tmpDir, '.claude', 'skills');
+
+    // Setup: create enabled and disabled plugins
+    createTestPlugin(tmpDir, 'active-skill', 'skill');
+    createTestPlugin(tmpDir, 'disabled-skill', 'skill');
+    createTestRegistry(tmpDir, [
+      { name: 'active-skill' },
+      { name: 'disabled-skill', enabled: false }
+    ]);
+
+    // Create stale output for disabled plugin
+    fs.mkdirSync(path.join(skillsDir, 'disabled-skill'), { recursive: true });
+    fs.writeFileSync(path.join(skillsDir, 'disabled-skill', 'skill.md'), 'stale', 'utf-8');
+    fs.mkdirSync(path.join(skillsDir, 'active-skill'), { recursive: true });
+    fs.writeFileSync(path.join(skillsDir, 'active-skill', 'skill.md'), 'active', 'utf-8');
+
+    const removed = cleanStaleOutput(pluginsDir, [skillsDir], {
+      plugins: [
+        { name: 'active-skill', source: 'active-skill', enabled: true },
+        { name: 'disabled-skill', source: 'disabled-skill', enabled: false }
+      ]
+    });
+
+    assert.deepStrictEqual(removed, ['disabled-skill'], 'only disabled plugin output removed');
+    assert.ok(!fs.existsSync(path.join(skillsDir, 'disabled-skill')), 'disabled output cleaned');
+    assert.ok(fs.existsSync(path.join(skillsDir, 'active-skill')), 'enabled output preserved');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('should preserve output from enabled plugins', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-test-'));
+    const pluginsDir = path.join(tmpDir, 'plugins', 'core');
+    const skillsDir = path.join(tmpDir, '.claude', 'skills');
+
+    createTestPlugin(tmpDir, 'my-skill', 'skill');
+    fs.mkdirSync(path.join(skillsDir, 'my-skill'), { recursive: true });
+    fs.writeFileSync(path.join(skillsDir, 'my-skill', 'skill.md'), 'data', 'utf-8');
+
+    const removed = cleanStaleOutput(pluginsDir, [skillsDir], {
+      plugins: [
+        { name: 'my-skill', source: 'my-skill', enabled: true }
+      ]
+    });
+
+    assert.deepStrictEqual(removed, [], 'nothing removed');
+    assert.ok(fs.existsSync(path.join(skillsDir, 'my-skill')), 'enabled output preserved');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('should preserve user-created directories not in registry', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-test-'));
+    const pluginsDir = path.join(tmpDir, 'plugins', 'core');
+    const skillsDir = path.join(tmpDir, '.claude', 'skills');
+
+    createTestPlugin(tmpDir, 'registered-skill', 'skill');
+    fs.mkdirSync(path.join(skillsDir, 'registered-skill'), { recursive: true });
+    // User-created directory (not in registry)
+    fs.mkdirSync(path.join(skillsDir, 'my-custom-dir'), { recursive: true });
+    fs.writeFileSync(path.join(skillsDir, 'my-custom-dir', 'data.txt'), 'custom', 'utf-8');
+
+    const removed = cleanStaleOutput(pluginsDir, [skillsDir], {
+      plugins: [
+        { name: 'registered-skill', source: 'registered-skill', enabled: true }
+      ]
+    });
+
+    assert.deepStrictEqual(removed, [], 'nothing removed');
+    assert.ok(fs.existsSync(path.join(skillsDir, 'my-custom-dir')), 'user-created dir preserved');
+    assert.ok(fs.existsSync(path.join(skillsDir, 'my-custom-dir', 'data.txt')), 'user data preserved');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test('should clean disabled output from both skills and hooks dirs', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stale-test-'));
+    const pluginsDir = path.join(tmpDir, 'plugins', 'core');
+    const skillsDir = path.join(tmpDir, '.claude', 'skills');
+    const hooksDir = path.join(tmpDir, '.claude', 'hooks');
+
+    createTestPlugin(tmpDir, 'disabled-skill', 'skill');
+    createTestPlugin(tmpDir, 'disabled-hook', 'hook');
+    fs.mkdirSync(path.join(skillsDir, 'disabled-skill'), { recursive: true });
+    fs.mkdirSync(path.join(hooksDir, 'disabled-hook'), { recursive: true });
+    fs.writeFileSync(path.join(hooksDir, 'disabled-hook', 'index.js'), '// stale', 'utf-8');
+
+    const removed = cleanStaleOutput(pluginsDir, [skillsDir, hooksDir], {
+      plugins: [
+        { name: 'disabled-skill', source: 'disabled-skill', enabled: false },
+        { name: 'disabled-hook', source: 'disabled-hook', enabled: false }
+      ]
+    });
+
+    assert.ok(removed.includes('disabled-skill'), 'disabled skill removed from skills dir');
+    assert.ok(removed.includes('disabled-hook'), 'disabled hook removed from hooks dir');
+    assert.ok(!fs.existsSync(path.join(skillsDir, 'disabled-skill')), 'skill output cleaned');
+    assert.ok(!fs.existsSync(path.join(hooksDir, 'disabled-hook')), 'hook output cleaned');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+});

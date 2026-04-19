@@ -382,7 +382,7 @@ test.describe('StateStore - FileSystemAdapter', () => {
     assert.strictEqual(value, undefined, 'returns undefined for missing file');
 
     // Cleanup
-    fs.rmdirSync(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 

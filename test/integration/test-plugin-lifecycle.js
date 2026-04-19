@@ -425,7 +425,7 @@ test.describe('Plugin Lifecycle Error Handling', () => {
     const loaded = await loader.loadAll();
     assert.deepStrictEqual(loaded, [], 'empty registry returns empty array');
 
-    fs.rmdirSync(tmpDir);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   test('handles plugin load failure gracefully', async () => {

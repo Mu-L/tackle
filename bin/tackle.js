@@ -86,10 +86,6 @@ if (flags.root) {
   targetRoot = path.resolve(flags.root);
 }
 
-// Subcommand aliases
-if (command === '--validate') command = 'validate';
-if (command === '--validate-config') command = 'validate-config';
-
 // ---------------------------------------------------------------------------
 // Color output support
 // ---------------------------------------------------------------------------
@@ -169,65 +165,63 @@ function cmdBuild() {
 }
 
 /**
- * Remove stale output directories from disabled or removed plugins.
+ * Remove stale output directories from disabled plugins.
+ * Only removes directories whose names match a registered-but-disabled plugin.
+ * User-created directories that don't match any plugin name are preserved.
  */
 function _cleanStaleOutput(builder) {
   var registry = builder._readRegistry();
   var plugins = registry.plugins || [];
-  var activeNames = {};
+  var enabledNames = {};
+  var disabledNames = {};
   for (var i = 0; i < plugins.length; i++) {
-    if (plugins[i].enabled !== false) {
-      var pDir = path.join(packageRoot, 'plugins', 'core', plugins[i].source || plugins[i].name);
-      var metaPath = path.join(pDir, 'plugin.json');
-      if (fs.existsSync(metaPath)) {
-        try {
-          var meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-          activeNames[meta.name || plugins[i].name] = true;
-        } catch (e) {}
+    var regName = plugins[i].name;
+    var pDir = path.join(builder._pluginsDir, plugins[i].source || regName);
+    var metaPath = path.join(pDir, 'plugin.json');
+    var name = regName;
+    if (fs.existsSync(metaPath)) {
+      try {
+        var meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+        name = meta.name || regName;
+      } catch (e) {
+        if (flags.verbose) {
+          console.log(colorize('[tackle-harness] Warning: could not parse ' + metaPath, 'yellow'));
+        }
       }
+    }
+    if (plugins[i].enabled !== false) {
+      enabledNames[name] = true;
+    } else {
+      disabledNames[name] = true;
     }
   }
 
   var outputDirs = [
-    { dir: path.join(targetRoot, '.claude', 'skills'), label: 'skill' },
-    { dir: path.join(targetRoot, '.claude', 'hooks'), label: 'hook' },
+    path.join(targetRoot, '.claude', 'skills'),
+    path.join(targetRoot, '.claude', 'hooks'),
   ];
 
   for (var d = 0; d < outputDirs.length; d++) {
-    var dir = outputDirs[d].dir;
+    var dir = outputDirs[d];
     if (!fs.existsSync(dir)) continue;
     var entries;
     try { entries = fs.readdirSync(dir); } catch (e) { continue; }
     for (var e = 0; e < entries.length; e++) {
-      if (!activeNames[entries[e]]) {
-        var stalePath = path.join(dir, entries[e]);
+      var entryName = entries[e];
+      // Only clean up if: directory name belongs to a registered disabled plugin
+      if (disabledNames[entryName] && !enabledNames[entryName]) {
+        var stalePath = path.join(dir, entryName);
         try {
-          _rmRecursive(stalePath);
-          console.log(colorize('[tackle-harness] Cleaned stale output: ' + entries[e], 'yellow'));
+          fs.rmSync(stalePath, { recursive: true, force: true });
+          console.log(colorize('[tackle-harness] Cleaned disabled plugin output: ' + entryName, 'yellow'));
         } catch (err) {
-          console.log(colorize('[tackle-harness] Warning: could not remove ' + entries[e], 'yellow'));
+          console.log(colorize('[tackle-harness] Warning: could not remove ' + entryName, 'yellow'));
         }
       }
     }
   }
 }
 
-/**
- * Recursively remove a directory.
- */
-function _rmRecursive(dirPath) {
-  if (!fs.existsSync(dirPath)) return;
-  var entries = fs.readdirSync(dirPath);
-  for (var i = 0; i < entries.length; i++) {
-    var entryPath = path.join(dirPath, entries[i]);
-    if (fs.statSync(entryPath).isDirectory()) {
-      _rmRecursive(entryPath);
-    } else {
-      fs.unlinkSync(entryPath);
-    }
-  }
-  fs.rmdirSync(dirPath);
-}
 
 function cmdValidate() {
   var builder = createBuilder();
@@ -284,15 +278,26 @@ function cmdHelp() {
   console.log('  tackle-harness [command] [options]');
   console.log('');
   console.log('Commands:');
-  console.log('  ' + colorize('build', 'green') + '              Build all plugins (default)');
-  console.log('  ' + colorize('validate', 'green') + '           Validate plugin.json files');
-  console.log('  ' + colorize('validate-config', 'green') + '   Validate harness-config.yaml');
-  console.log('  ' + colorize('init', 'green') + '              First-time setup (build + config)');
-  console.log('  ' + colorize('status', 'green') + '             Show build status and plugin statistics');
-  console.log('  ' + colorize('config', 'green') + '             Show/validate current configuration');
-  console.log('  ' + colorize('list', 'green') + '               List all registered plugins');
-  console.log('  ' + colorize('version', 'green') + '            Show version information');
-  console.log('  ' + colorize('help', 'green') + '               Show this help message');
+  var helpCommands = [
+    ['build', 'Build all plugins (default)'],
+    ['validate', 'Validate plugin.json files'],
+    ['validate-config', 'Validate harness-config.yaml'],
+    ['init', 'First-time setup (build + config)'],
+    ['status', 'Show build status and plugin statistics'],
+    ['config', 'Show/validate current configuration'],
+    ['list', 'List all registered plugins'],
+    ['version', 'Show version information'],
+    ['help', 'Show this help message'],
+  ];
+  var maxCmdLen = 0;
+  for (var ci = 0; ci < helpCommands.length; ci++) {
+    if (helpCommands[ci][0].length > maxCmdLen) maxCmdLen = helpCommands[ci][0].length;
+  }
+  for (var hi = 0; hi < helpCommands.length; hi++) {
+    var cmdName = helpCommands[hi][0];
+    var cmdPad = ' '.repeat(maxCmdLen - cmdName.length + 2);
+    console.log('  ' + colorize(cmdName, 'green') + cmdPad + helpCommands[hi][1]);
+  }
   console.log('');
   console.log('Options:');
   console.log('  --root <path>       Specify target project root (default: cwd)');
@@ -346,10 +351,22 @@ function cmdStatus() {
   var configPath = path.join(targetRoot, '.claude', 'config', 'harness-config.yaml');
 
   console.log(colorize('Build Status:', 'cyan'));
-  console.log('  .claude/skills/:    ' + (fs.existsSync(skillsDir) ? colorize('exists', 'green') : colorize('missing', 'red')));
-  console.log('  .claude/hooks/:     ' + (fs.existsSync(hooksDir) ? colorize('exists', 'green') : colorize('missing', 'red')));
-  console.log('  settings.json:      ' + (fs.existsSync(settingsPath) ? colorize('exists', 'green') : colorize('missing', 'red')));
-  console.log('  harness-config.yaml: ' + (fs.existsSync(configPath) ? colorize('exists', 'green') : colorize('missing', 'red')));
+  var statusLabels = [
+    ['.claude/skills/:', skillsDir],
+    ['.claude/hooks/:', hooksDir],
+    ['settings.json:', settingsPath],
+    ['harness-config.yaml:', configPath],
+  ];
+  var maxLabelLen = 0;
+  for (var li = 0; li < statusLabels.length; li++) {
+    if (statusLabels[li][0].length > maxLabelLen) maxLabelLen = statusLabels[li][0].length;
+  }
+  for (var si = 0; si < statusLabels.length; si++) {
+    var label = statusLabels[si][0];
+    var padding = ' '.repeat(maxLabelLen - label.length + 2);
+    var exists = fs.existsSync(statusLabels[si][1]);
+    console.log('  ' + label + padding + (exists ? colorize('exists', 'green') : colorize('missing', 'red')));
+  }
   console.log('');
 
   // Plugin statistics
@@ -417,9 +434,9 @@ function cmdStatus() {
         var skillEntryDir = path.join(skillsDir, entries[ei]);
         try {
           var skillFiles = fs.readdirSync(skillEntryDir);
-          for (var si = 0; si < skillFiles.length; si++) {
+          for (var fi = 0; fi < skillFiles.length; fi++) {
             try {
-              var fileStat = fs.statSync(path.join(skillEntryDir, skillFiles[si]));
+              var fileStat = fs.statSync(path.join(skillEntryDir, skillFiles[fi]));
               if (!latestTime || fileStat.mtime > latestTime) {
                 latestTime = fileStat.mtime;
               }

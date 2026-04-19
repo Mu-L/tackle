@@ -323,7 +323,7 @@ test.describe('Build Pipeline Error Scenarios', () => {
 
     // Remove skill2 directory completely
     const skill2Dir = path.join(tmpDir, 'plugins', 'core', 'skill2');
-    fs.rmdirSync(skill2Dir, { recursive: true });
+    fs.rmSync(skill2Dir, { recursive: true });
 
     // Update registry to reference the missing plugin
     const registryPath = path.join(tmpDir, 'plugins', 'plugin-registry.json');
