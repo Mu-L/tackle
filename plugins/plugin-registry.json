@@ -112,7 +112,18 @@
       "name": "skill-agent-dispatcher",
       "source": "skill-agent-dispatcher",
       "enabled": true,
-      "config": {}
+      "config": {
+        "concurrency": {
+          "default_max": 6,
+          "schedules": [
+            {
+              "name": "peak",
+              "time_range": { "start": "14:00", "end": "18:00" },
+              "max_concurrent": 3
+            }
+          ]
+        }
+      }
     },
     {
       "name": "skill-workflow-orchestrator",

@@ -336,8 +336,18 @@ while (now() - start_time) < max_wait_time:
             update_task_file(task.id, status="completed")
 
     # ---- Phase C: 按需创建 Teamee 处理 newly-unblocked 任务 ----
+    # C0. 读取并发配置，计算当前时段的并发上限
+    concurrency_config = get_config("agent_dispatcher.concurrency")
+    max_concurrent = get_max_concurrent(concurrency_config, now())
+    active_count = len(teamee_map)
+
     for task in tasks:
         if task.status == "pending" and task.owner == "" and is_unblocked(task):
+            # C0.1 并发检查：活跃 Teamee 数已达上限，跳过创建
+            if active_count >= max_concurrent:
+                log(f"并发上限 {max_concurrent} 已达，任务 {task.id} 保持 pending")
+                continue
+
             # C1. 检查是否已有映射（防止重复创建）
             if task.id in teamee_map:
                 continue
@@ -365,6 +375,7 @@ while (now() - start_time) < max_wait_time:
 
             # C5. 记录映射关系
             teamee_map[task.id] = teamee_name
+            active_count += 1
             print(f"为任务 {task.id} 创建专用 Teamee: {teamee_name}")
 
             # C6. 创建任务状态文件 (DISP-002)
@@ -530,6 +541,30 @@ def is_unblocked(task):
         if blocker.status != "completed":
             return False
     return True
+```
+
+**辅助函数 — 并发控制**（Phase C 使用）:
+```
+def get_max_concurrent(config, current_time):
+    """根据当前时间匹配 schedule，返回对应并发上限"""
+    if not config or not config.get("schedules"):
+        return config.get("default_max", 6) if config else 6
+
+    current_hhmm = current_time.strftime("%H:%M")
+    for schedule in config["schedules"]:
+        start = schedule["time_range"]["start"]
+        end = schedule["time_range"]["end"]
+        if is_time_in_range(current_hhmm, start, end):
+            return schedule["max_concurrent"]
+
+    return config.get("default_max", 6)
+
+def is_time_in_range(current, start, end):
+    """判断当前时间是否在范围内，支持跨午夜"""
+    if start <= end:
+        return start <= current < end
+    else:  # 跨午夜，如 22:00-06:00
+        return current >= start or current < end
 ```
 
 **监控循环关键特性**:

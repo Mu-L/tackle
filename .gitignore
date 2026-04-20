@@ -12,7 +12,6 @@ docs/*
 !docs/installation.md
 !docs/plugin-development.md
 task.md
-CHANGELOG.md
 
 # Node
 node_modules/

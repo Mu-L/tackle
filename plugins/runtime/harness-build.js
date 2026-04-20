@@ -838,29 +838,32 @@ HarnessBuild.prototype._readHarnessConfig = function _readHarnessConfig() {
   var configPath = path.join(this._rootDir, '.claude', 'config', 'harness-config.yaml');
   try {
     var content = fs.readFileSync(configPath, 'utf-8');
-    // Extract context_window section using simple regex
+    // Extract multiple sections: context_window and agent_dispatcher
     var result = {};
     var inSection = false;
+    var currentSection = null;
     var sectionIndent = -1;
     var lines = content.split('\n');
 
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i];
+      var trimmed = line.trim();
 
-      // Detect context_window section start
-      if (/^context_window\s*:/.test(line.trim())) {
+      // Detect section start (context_window or agent_dispatcher)
+      if (/^(context_window|agent_dispatcher)\s*:/.test(trimmed)) {
         inSection = true;
+        currentSection = trimmed.replace(/\s*:$/, '');
         sectionIndent = line.search(/\S/);
-        result = { _source: 'context_window' };
+        result[currentSection] = { _source: currentSection };
         continue;
       }
 
-      if (inSection) {
-        var trimmed = line.trim();
-
+      if (inSection && currentSection) {
         // Stop at next top-level section (--- separator or same-indent key)
-        if (trimmed === '---' || (line.search(/\S/) >= 0 && line.search(/\S/) <= sectionIndent && !/^[\s#]/.test(trimmed) && trimmed.indexOf('context_window') === -1 && /^[a-z]/.test(trimmed))) {
-          break;
+        if (trimmed === '---' || (line.search(/\S/) >= 0 && line.search(/\S/) <= sectionIndent && !/^[\s#]/.test(trimmed) && trimmed.indexOf(currentSection) === -1 && /^[a-z_]/.test(trimmed))) {
+          inSection = false;
+          currentSection = null;
+          continue;
         }
 
         // Skip empty lines and comments
@@ -881,49 +884,27 @@ HarnessBuild.prototype._readHarnessConfig = function _readHarnessConfig() {
           valuePart = valuePart.substring(0, commentIdx).trim();
         }
 
-        // Skip nested keys like "thresholds:" (we handle them inline)
+        // Skip nested keys — delegate to _parseNestedBlock
         if (valuePart === '' || valuePart === null) {
-          // This is a nested section header, read its children
           var nestedIndent = lines[i] ? lines[i].search(/\S/) : -1;
-          var nested = {};
-          var j = i + 1;
-          for (; j < lines.length; j++) {
-            var nLine = lines[j];
-            if (!nLine.trim() || nLine.trim().indexOf('#') === 0) continue;
-            var nIndent = nLine.search(/\S/);
-            if (nIndent <= nestedIndent) break;
-            var nTrimmed = nLine.trim();
-            // Handle list items "- key: value" or "- value"
-            if (nTrimmed.indexOf('- ') === 0) {
-              nTrimmed = nTrimmed.substring(2);
-            }
-            var nColonIdx = nTrimmed.indexOf(':');
-            if (nColonIdx >= 0) {
-              var nKey = nTrimmed.substring(0, nColonIdx).trim();
-              var nVal = nTrimmed.substring(nColonIdx + 1).trim();
-              var nCommentIdx = nVal.indexOf(' #');
-              if (nCommentIdx >= 0) nVal = nVal.substring(0, nCommentIdx).trim();
-              nested[nKey] = _parseValue(nVal);
-            }
-          }
-          result[key] = nested;
-          // Advance outer loop past the nested section
-          i = j - 1;
+          var parsed = _parseNestedBlock(lines, i + 1, nestedIndent);
+          result[currentSection][key] = parsed.value;
+          i = parsed.endIdx;
           continue;
         }
 
-        // Remove surrounding quotes
-        if ((valuePart.charAt(0) === '"' && valuePart.charAt(valuePart.length - 1) === '"') ||
-            (valuePart.charAt(0) === "'" && valuePart.charAt(valuePart.length - 1) === "'")) {
-          valuePart = valuePart.substring(1, valuePart.length - 1);
-        }
-
-        result[key] = _parseValue(valuePart);
+        result[currentSection][key] = _parseValue(valuePart);
       }
     }
 
-    this._harnessConfig = (inSection && result._source) ? result : {};
-    delete this._harnessConfig._source;
+    // Clean up _source markers
+    for (var section in result) {
+      if (result.hasOwnProperty(section) && result[section]._source) {
+        delete result[section]._source;
+      }
+    }
+
+    this._harnessConfig = result;
   } catch (err) {
     this._harnessConfig = {};
   }
@@ -938,9 +919,176 @@ function _parseValue(val) {
   if (val === 'true') return true;
   if (val === 'false') return false;
   if (val === 'null' || val === '~') return null;
+  if ((val.charAt(0) === '"' && val.charAt(val.length - 1) === '"') ||
+      (val.charAt(0) === "'" && val.charAt(val.length - 1) === "'")) {
+    return val.substring(1, val.length - 1);
+  }
   var num = Number(val);
   if (!isNaN(num) && val !== '') return num;
   return val;
+}
+
+/**
+ * Parse a nested YAML block from raw string lines.
+ * Called from _readHarnessConfig — converts raw lines to {text, indent} objects,
+ * then delegates to _parseChildLines.
+ *
+ * @param {string[]} lines - all raw lines
+ * @param {number} startIdx - index of the first child line
+ * @param {number} parentIndent - indentation of the parent key
+ * @returns {{value: object|Array, endIdx: number}}
+ */
+function _parseNestedBlock(lines, startIdx, parentIndent) {
+  var childLines = [];
+  var endIdx = startIdx;
+  for (var i = startIdx; i < lines.length; i++) {
+    var line = lines[i];
+    if (!line.trim() || line.trim().indexOf('#') === 0) continue;
+    var indent = line.search(/\S/);
+    if (indent <= parentIndent) break;
+    childLines.push({ text: line.trim(), indent: indent });
+    endIdx = i;
+  }
+
+  if (childLines.length === 0) {
+    return { value: {}, endIdx: startIdx - 1 };
+  }
+
+  return _parseChildLines(childLines, endIdx);
+}
+
+/**
+ * Parse pre-collected child lines (always {text, indent} objects).
+ * Determines list vs object block and dispatches accordingly.
+ */
+function _parseChildLines(childLines, rawEndIdx) {
+  var isList = childLines[0].text.indexOf('- ') === 0;
+  if (isList) {
+    return { value: _parseListItems(childLines), endIdx: rawEndIdx };
+  }
+  return { value: _parseObjectItems(childLines), endIdx: rawEndIdx };
+}
+
+/**
+ * Parse list items from child lines.
+ * Each "- " prefixed line starts a new item; subsequent more-indented lines
+ * belong to that item as nested properties.
+ */
+function _parseListItems(childLines) {
+  var arr = [];
+  var currentItem = null;
+  var itemStartIndent = -1;
+
+  for (var i = 0; i < childLines.length; i++) {
+    var cl = childLines[i];
+
+    if (cl.text.indexOf('- ') === 0) {
+      if (currentItem !== null) arr.push(currentItem);
+      var itemContent = cl.text.substring(2);
+      currentItem = _parseLineAsObject(itemContent);
+      itemStartIndent = cl.indent;
+    } else if (currentItem !== null && cl.indent > itemStartIndent) {
+      var colonIdx = cl.text.indexOf(':');
+      if (colonIdx >= 0) {
+        var key = cl.text.substring(0, colonIdx).trim();
+        var val = cl.text.substring(colonIdx + 1).trim();
+        var commentIdx = val.indexOf(' #');
+        if (commentIdx >= 0) val = val.substring(0, commentIdx).trim();
+
+        if (val === '') {
+          // Nested object within list item — collect and parse children inline
+          var subChildren = _collectChildren(childLines, i + 1, cl.indent);
+          var subResult = _parseChildLines(subChildren, 0);
+          currentItem[key] = subResult.value;
+          i = subChildren.length > 0 ? childLines.indexOf(subChildren[subChildren.length - 1]) : i;
+        } else {
+          currentItem[key] = _parseValue(val);
+        }
+      }
+    }
+  }
+  if (currentItem !== null) arr.push(currentItem);
+  return arr;
+}
+
+/**
+ * Collect consecutive child lines with indent > parentIndent,
+ * starting from startIdx in the childLines array.
+ */
+function _collectChildren(childLines, startIdx, parentIndent) {
+  var result = [];
+  for (var i = startIdx; i < childLines.length; i++) {
+    if (childLines[i].indent <= parentIndent) break;
+    result.push(childLines[i]);
+  }
+  return result;
+}
+
+/**
+ * Parse a single "- key: value" or "- value" line into an object.
+ */
+function _parseLineAsObject(text) {
+  var colonIdx = text.indexOf(':');
+  if (colonIdx >= 0) {
+    var key = text.substring(0, colonIdx).trim();
+    var val = text.substring(colonIdx + 1).trim();
+    var commentIdx = val.indexOf(' #');
+    if (commentIdx >= 0) val = val.substring(0, commentIdx).trim();
+    var obj = {};
+    obj[key] = val === '' ? {} : _parseValue(val);
+    return obj;
+  }
+  return _parseValue(text);
+}
+
+/**
+ * Parse object block (key-value pairs from child lines).
+ */
+function _parseObjectItems(childLines) {
+  var obj = {};
+  for (var i = 0; i < childLines.length; i++) {
+    var cl = childLines[i];
+    var colonIdx = cl.text.indexOf(':');
+    if (colonIdx === -1) continue;
+
+    var key = cl.text.substring(0, colonIdx).trim();
+    var val = cl.text.substring(colonIdx + 1).trim();
+    var commentIdx = val.indexOf(' #');
+    if (commentIdx >= 0) val = val.substring(0, commentIdx).trim();
+
+    if (val === '') {
+      var subChildren = _collectChildren(childLines, i + 1, cl.indent);
+      if (subChildren.length === 0) {
+        obj[key] = {};
+      } else {
+        var subResult = _parseChildLines(subChildren, 0);
+        obj[key] = subResult.value;
+      }
+      i = childLines.indexOf(subChildren[subChildren.length - 1]);
+    } else {
+      obj[key] = _parseValue(val);
+    }
+  }
+  return obj;
+}
+
+/**
+ * Serialize a config value for injection into skill.md comment blocks.
+ * Arrays and nested objects become compact JSON; scalars stay as-is.
+ */
+function _serializeConfigValue(val) {
+  if (val === null || val === undefined) return '';
+  if (typeof val !== 'object') return String(val);
+  if (Array.isArray(val)) {
+    return '[' + val.map(function (item) { return _serializeConfigValue(item); }).join(', ') + ']';
+  }
+  var parts = [];
+  for (var k in val) {
+    if (val.hasOwnProperty(k)) {
+      parts.push(k + '=' + _serializeConfigValue(val[k]));
+    }
+  }
+  return '{' + parts.join(', ') + '}';
 }
 
 /**
@@ -954,31 +1102,48 @@ function _parseValue(val) {
 HarnessBuild.prototype._injectContextConfig = function _injectContextConfig(content, pluginName) {
   var config = this._readHarnessConfig();
   if (!config || Object.keys(config).length === 0) {
-    return content; // No context_window config, skip injection
+    return content; // No config, skip injection
   }
 
-  // Apply per-plugin override if exists
-  if (config.overrides && config.overrides[pluginName]) {
+  // Determine which config section to inject based on plugin name
+  var relevantConfig = null;
+  var configBlockName = '';
+
+  if ((pluginName === 'skill-agent-dispatcher' || pluginName === 'agent-dispatcher') && config.agent_dispatcher) {
+    relevantConfig = config.agent_dispatcher;
+    configBlockName = 'AGENT-DISPATCHER-CONFIG';
+  } else if (config.context_window) {
+    relevantConfig = config.context_window;
+    configBlockName = 'CONTEXT-CONFIG';
+  }
+
+  if (!relevantConfig || Object.keys(relevantConfig).length === 0) {
+    return content;
+  }
+
+  // Apply per-plugin override if exists (only for context_window)
+  if (config.overrides && config.overrides[pluginName] && relevantConfig === config.context_window) {
     var override = config.overrides[pluginName];
     for (var k in override) {
       if (override.hasOwnProperty(k)) {
-        config[k] = override[k];
+        relevantConfig[k] = override[k];
       }
     }
   }
-  delete config.overrides;
 
   // Build config block
-  var lines = ['\n<!-- CONTEXT-CONFIG'];
-  for (var key in config) {
-    if (!config.hasOwnProperty(key)) continue;
-    var val = config[key];
-    if (typeof val === 'object' && val !== null) {
+  var lines = ['\n<!-- ' + configBlockName];
+  for (var key in relevantConfig) {
+    if (!relevantConfig.hasOwnProperty(key)) continue;
+    var val = relevantConfig[key];
+    if (Array.isArray(val)) {
+      lines.push(key + ': ' + _serializeConfigValue(val));
+    } else if (typeof val === 'object' && val !== null) {
       // Flatten nested objects (e.g., thresholds)
       var parts = [];
       for (var sk in val) {
         if (val.hasOwnProperty(sk)) {
-          parts.push(sk + '=' + val[sk]);
+          parts.push(sk + '=' + _serializeConfigValue(val[sk]));
         }
       }
       lines.push(key + ': ' + parts.join(', '));
@@ -986,7 +1151,7 @@ HarnessBuild.prototype._injectContextConfig = function _injectContextConfig(cont
       lines.push(key + ': ' + val);
     }
   }
-  lines.push('CONTEXT-CONFIG -->\n');
+  lines.push(configBlockName + ' -->\n');
 
   var configBlock = lines.join('\n');
 
