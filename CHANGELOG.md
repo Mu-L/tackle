@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.12] - 2026-04-22
+
+### Added
+
+- Progress Tracker 记录进度时同步更新 `docs/wp/WP-XXX.md` 状态字段和子任务状态
+- Format A（基本信息表 + 子工作包列表表，WP-029~035）和 Format B（`### 状态` 独立节 + 任务列表表，WP-001~028）全覆盖
+- 验收标准 checkbox 自动勾选（`- [ ]` → `- [x]`）
+
+### Fixed
+
+- Watchdog Provider 代码规范化（`var` → `const`）
+- Watchdog 前台模式阻塞修复（`return new Promise(() => {})`）
+- `daemon-status.json` 新增 `state` 字段，支持 paused 状态显示
+- Watchdog `pause` 命令异步化
+- Watchdog 与 Watchdog Manager 插件启用
+
 ## [0.0.11] - 2026-04-20
 
 ### Added
@@ -96,6 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.0.12]: https://github.com/ph419/tackle/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/ph419/tackle/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/ph419/tackle/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/user/tackle-harness/compare/v0.0.8...v0.0.9

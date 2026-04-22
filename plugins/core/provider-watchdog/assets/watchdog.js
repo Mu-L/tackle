@@ -214,7 +214,7 @@ async function cmdStart(options, args) {
 
     // 保持进程运行
     console.log('守护进程已启动，按 Ctrl+C 退出');
-    return 0;
+    return new Promise(() => {});
   }
 
   // 后台模式
@@ -261,6 +261,7 @@ async function cmdStart(options, args) {
     stateManager.writeDaemonStatus({
       pid: child.pid,
       mode: 'background',
+      state: 'running',
       started_at: new Date().toISOString(),
       last_check: new Date().toISOString(),
       health: 'healthy'
@@ -311,7 +312,7 @@ function cmdStatus(options) {
   console.log('='.repeat(50));
   console.log(`PID:         ${daemonStatus.pid}`);
   console.log(`模式:        ${daemonStatus.mode}`);
-  console.log(`状态:        ${isAlive ? '\u001b[32m运行中\u001b[0m' : '\u001b[31m已停止\u001b[0m'}`);
+  console.log(`状态:        ${!isAlive ? '\u001b[31m已停止\u001b[0m' : daemonStatus.state === 'paused' ? '\u001b[33m已暂停\u001b[0m' : '\u001b[32m运行中\u001b[0m'}`);
   console.log(`健康:        ${_formatHealthStatus(daemonStatus.health)}`);
   console.log(`启动时间:    ${daemonStatus.started_at ? new Date(daemonStatus.started_at).toLocaleString('zh-CN') : '未知'}`);
   console.log(`最后检查:    ${daemonStatus.last_check ? new Date(daemonStatus.last_check).toLocaleString('zh-CN') : '未知'}`);
@@ -622,8 +623,6 @@ async function cmdStop(options) {
  */
 function _clearDaemonStatus(stateManager) {
   try {
-    const fs = require('fs');
-    const path = require('path');
     const statusFile = path.join(stateManager.heartbeatDir, 'daemon-status.json');
 
     if (fs.existsSync(statusFile)) {
@@ -679,7 +678,7 @@ async function main() {
       exitCode = await cmdRestart(parsed.options, parsed.args);
       break;
     case 'pause':
-      exitCode = cmdPause(parsed.options);
+      exitCode = await cmdPause(parsed.options, parsed.args);
       break;
     case 'stop':
       exitCode = await cmdStop(parsed.options);

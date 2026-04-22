@@ -1,6 +1,6 @@
 'use strict';
 
-var ProviderPlugin = require('../../contracts/plugin-interface').ProviderPlugin;
+const ProviderPlugin = require('../../contracts/plugin-interface').ProviderPlugin;
 
 /**
  * Watchdog Provider Plugin
@@ -23,8 +23,8 @@ class WatchdogProvider extends ProviderPlugin {
   }
 
   async factory(context) {
-    var fs = require('fs');
-    var path = require('path');
+    const fs = require('fs');
+    const path = require('path');
 
     return {
       /**
@@ -32,7 +32,7 @@ class WatchdogProvider extends ProviderPlugin {
        * @returns {boolean}
        */
       isDeployed: function () {
-        var watchdogPath = path.join('.claude', 'watchdog', 'watchdog.js');
+        const watchdogPath = path.join('.claude', 'watchdog', 'watchdog.js');
         return fs.existsSync(watchdogPath);
       },
 
@@ -57,12 +57,12 @@ class WatchdogProvider extends ProviderPlugin {
        * @returns {boolean}
        */
       isRunning: function () {
-        var statusFile = path.join('.claude-daemon', 'daemon-status.json');
+        const statusFile = path.join('.claude-daemon', 'daemon-status.json');
         if (!fs.existsSync(statusFile)) {
           return false;
         }
         try {
-          var status = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+          const status = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
           return status.health !== 'terminated';
         } catch (e) {
           return false;

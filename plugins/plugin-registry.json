@@ -134,13 +134,13 @@
     {
       "name": "provider-watchdog",
       "source": "provider-watchdog",
-      "enabled": false,
+      "enabled": true,
       "config": {}
     },
     {
       "name": "skill-watchdog-manager",
       "source": "skill-watchdog-manager",
-      "enabled": false,
+      "enabled": true,
       "config": {}
     }
   ]
