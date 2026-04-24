@@ -154,6 +154,7 @@ async function cmdStart(options, args) {
   // 加载配置
   const loadedConfig = config.loadConfig(options.config);
   const mode = args.mode || loadedConfig.daemon.mode;
+  loadedConfig.daemon.mode = process.env.WATCHDOG_MODE || mode;
 
   // 创建状态管理器
   const stateManager = new StateFileManager({
@@ -230,43 +231,49 @@ async function cmdStart(options, args) {
     fs.mkdirSync(logDir, { recursive: true });
   }
 
-  // 创建 detached 子进程
+  // 打开文件描述符用于子进程输出重定向
+  const stdoutFd = fs.openSync(stdoutLog, 'a');
+  const stderrFd = fs.openSync(stderrLog, 'a');
+
+  // 创建 detached 子进程，使用 fd 直接重定向输出
   const child = spawn(process.argv[0], [process.argv[1], 'start', '--config', options.config, '--foreground'], {
     detached: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', stdoutFd, stderrFd],
     cwd: process.cwd(),
-    env: process.env
+    env: { ...process.env, WATCHDOG_MODE: 'background' }
   });
-
-  // 重定向输出到日志文件
-  const stdoutStream = fs.createWriteStream(stdoutLog, { flags: 'a' });
-  const stderrStream = fs.createWriteStream(stderrLog, { flags: 'a' });
-
-  child.stdout.pipe(stdoutStream);
-  child.stderr.pipe(stderrStream);
 
   // 取消父进程引用，使子进程成为守护进程
   child.unref();
 
-  // 等待一小段时间确保子进程启动
-  await new Promise(resolve => setTimeout(resolve, 500));
+  // 关闭父进程中的文件描述符（子进程已继承）
+  fs.closeSync(stdoutFd);
+  fs.closeSync(stderrFd);
 
-  // 检查子进程是否存活
+  // 轮询等待子进程自行写入状态文件（最多 3 秒）
   const procManager = new ProcessManager({
     killTimeoutSec: loadedConfig.process.kill_timeout_sec
   });
 
-  if (procManager.isProcessAlive(child.pid)) {
-    // 写入守护进程状态文件
-    stateManager.writeDaemonStatus({
-      pid: child.pid,
-      mode: 'background',
-      state: 'running',
-      started_at: new Date().toISOString(),
-      last_check: new Date().toISOString(),
-      health: 'healthy'
-    });
+  const maxWaitMs = 3000;
+  const pollStart = Date.now();
+  let childStarted = false;
 
+  while (Date.now() - pollStart < maxWaitMs) {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const childStatus = stateManager.readDaemonStatus();
+    if (childStatus && childStatus.pid === child.pid && childStatus.state === 'running') {
+      childStarted = true;
+      break;
+    }
+  }
+
+  if (childStarted) {
+    console.log(`守护进程已启动 (PID: ${child.pid})`);
+    console.log(`标准输出: ${stdoutLog}`);
+    console.log(`错误输出: ${stderrLog}`);
+    return 0;
+  } else if (procManager.isProcessAlive(child.pid)) {
     console.log(`守护进程已启动 (PID: ${child.pid})`);
     console.log(`标准输出: ${stdoutLog}`);
     console.log(`错误输出: ${stderrLog}`);
@@ -312,7 +319,7 @@ function cmdStatus(options) {
   console.log('='.repeat(50));
   console.log(`PID:         ${daemonStatus.pid}`);
   console.log(`模式:        ${daemonStatus.mode}`);
-  console.log(`状态:        ${!isAlive ? '\u001b[31m已停止\u001b[0m' : daemonStatus.state === 'paused' ? '\u001b[33m已暂停\u001b[0m' : '\u001b[32m运行中\u001b[0m'}`);
+  console.log(`状态:        ${_formatStateStatus(daemonStatus.state, isAlive)}`);
   console.log(`健康:        ${_formatHealthStatus(daemonStatus.health)}`);
   console.log(`启动时间:    ${daemonStatus.started_at ? new Date(daemonStatus.started_at).toLocaleString('zh-CN') : '未知'}`);
   console.log(`最后检查:    ${daemonStatus.last_check ? new Date(daemonStatus.last_check).toLocaleString('zh-CN') : '未知'}`);
@@ -343,7 +350,7 @@ function cmdStatus(options) {
       const lastUpdate = task.last_update
         ? new Date(task.last_update).toLocaleString('zh-CN', { hour12: false })
         : '未知';
-      console.log(`  ${task.task_id.padEnd(5)} | ${status.padEnd(10)} | ${wpId.padEnd(9)} | ${lastUpdate}`);
+      console.log(`  ${task.task_id.padEnd(5)} | ${_visiblePadEnd(status, 10)} | ${wpId.padEnd(9)} | ${lastUpdate}`);
     }
   } else {
     console.log('\n任务状态: 无任务');
@@ -391,13 +398,42 @@ function cmdStatus(options) {
  * @private
  */
 function _formatHealthStatus(health) {
-  const healthMap = {
-    healthy: '\u001b[32m健康\u001b[0m',
-    degraded: '\u001b[33m降级\u001b[0m',
-    critical: '\u001b[31m严重\u001b[0m',
-    terminated: '\u001b[90m已终止\u001b[0m'
+  const colorMap = {
+    healthy: '[32m',
+    degraded: '[33m',
+    critical: '[31m',
+    terminated: '[90m'
   };
-  return healthMap[health] || health || '未知';
+  const labelMap = {
+    healthy: '健康',
+    degraded: '降级',
+    critical: '严重',
+    terminated: '已终止'
+  };
+  const label = labelMap[health] || health || '未知';
+  const color = colorMap[health] || '';
+  return color ? color + label + '[0m' : label;
+}
+
+/**
+ * 格式化守护进程状态
+ * @private
+ */
+function _formatStateStatus(state, isAlive) {
+  if (!isAlive) {
+    return '\x1b[31m已停止\x1b[0m';
+  }
+  const colorMap = {
+    running: '\x1b[32m',
+    paused: '\x1b[33m'
+  };
+  const labelMap = {
+    running: '运行中',
+    paused: '已暂停'
+  };
+  const label = labelMap[state] || state || '未知';
+  const color = colorMap[state] || '';
+  return color ? color + label + '\x1b[0m' : label;
 }
 
 /**
@@ -405,13 +441,30 @@ function _formatHealthStatus(health) {
  * @private
  */
 function _formatTaskStatus(status) {
-  const statusMap = {
-    pending: '\u001b[36m待处理\u001b[0m',
-    in_progress: '\u001b[33m进行中\u001b[0m',
-    completed: '\u001b[32m已完成\u001b[0m',
-    failed: '\u001b[31m已失败\u001b[0m'
+  const colorMap = {
+    pending: '[36m',
+    in_progress: '[33m',
+    completed: '[32m',
+    failed: '[31m'
   };
-  return statusMap[status] || status || '未知';
+  const labelMap = {
+    pending: '待处理',
+    in_progress: '进行中',
+    completed: '已完成',
+    failed: '已失败'
+  };
+  const label = labelMap[status] || status || '未知';
+  const color = colorMap[status] || '';
+  return color ? color + label + '[0m' : label;
+}
+
+/**
+ * 按可见宽度（剥离 ANSI 转义码后）填充字符串
+ * @private
+ */
+function _visiblePadEnd(str, targetLen) {
+  const visibleLen = str.replace(/\x1b\[[0-9;]*m/g, '').length;
+  return str + ' '.repeat(Math.max(0, targetLen - visibleLen));
 }
 
 /**
@@ -623,14 +676,12 @@ async function cmdStop(options) {
  */
 function _clearDaemonStatus(stateManager) {
   try {
-    const statusFile = path.join(stateManager.heartbeatDir, 'daemon-status.json');
-
-    if (fs.existsSync(statusFile)) {
-      // 更新为 terminated 状态而不是删除
-      const status = JSON.parse(fs.readFileSync(statusFile, 'utf8'));
+    const status = stateManager.readDaemonStatus();
+    if (status) {
       status.health = 'terminated';
+      status.state = 'stopped';
       status.last_check = new Date().toISOString();
-      fs.writeFileSync(statusFile, JSON.stringify(status, null, 2), 'utf8');
+      stateManager.writeDaemonStatus(status);
     }
   } catch (err) {
     // 忽略清理错误

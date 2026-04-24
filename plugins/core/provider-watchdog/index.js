@@ -28,6 +28,24 @@ class WatchdogProvider extends ProviderPlugin {
 
     return {
       /**
+       * 读取配置中的 heartbeat_dir，回退到默认值
+       * @private
+       * @returns {string}
+       */
+      _getHeartbeatDir: function () {
+        const configPath = path.join('.claude-daemon', 'daemon-config.json');
+        if (fs.existsSync(configPath)) {
+          try {
+            const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+            return cfg.heartbeat_dir || '.claude-daemon';
+          } catch (e) {
+            // 解析失败，使用默认值
+          }
+        }
+        return '.claude-daemon';
+      },
+
+      /**
        * 检查 watchdog 是否已部署到目标项目
        * @returns {boolean}
        */
@@ -49,7 +67,7 @@ class WatchdogProvider extends ProviderPlugin {
        * @returns {string}
        */
       getStatusFilePath: function () {
-        return path.join('.claude-daemon', 'daemon-status.json');
+        return path.join(this._getHeartbeatDir(), 'daemon-status.json');
       },
 
       /**
@@ -57,7 +75,7 @@ class WatchdogProvider extends ProviderPlugin {
        * @returns {boolean}
        */
       isRunning: function () {
-        const statusFile = path.join('.claude-daemon', 'daemon-status.json');
+        const statusFile = this.getStatusFilePath();
         if (!fs.existsSync(statusFile)) {
           return false;
         }

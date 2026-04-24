@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.14] - 2026-04-24
+
+### Fixed
+
+- Watchdog 守护进程启动改为 fd 直接重定向输出，避免 pipe + WriteStream 导致的资源泄漏
+- 守护进程启动确认改为轮询状态文件（3 秒超时），取代硬编码 500ms 延时 + PID 存活检查
+- `status` 命令输出重构：状态/健康/任务状态格式化抽取为独立函数，修复 ANSI 转义码导致列对齐错乱
+- `_clearDaemonStatus` 改用 `stateManager.readDaemonStatus()` / `writeDaemonStatus()` 统一读写，并写入 `state: stopped`
+- WatchdogProvider 的 `getStatusFilePath()` / `isRunning()` 改为从配置读取 `heartbeat_dir`，不再硬编码 `.claude-daemon`
+- 后台子进程通过 `WATCHDOG_MODE` 环境变量传递运行模式
+
 ## [0.0.13] - 2026-04-24
 
 ### Fixed
@@ -118,6 +129,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.0.14]: https://github.com/ph419/tackle/compare/v0.0.13...v0.0.14
 [0.0.13]: https://github.com/ph419/tackle/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/ph419/tackle/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/ph419/tackle/compare/v0.0.10...v0.0.11
