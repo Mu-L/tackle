@@ -242,6 +242,7 @@ These hooks point to scripts in `node_modules/tackle-harness/` and won't affect 
 
 ## Documentation
 
+- [Daily Workflow Best Practices](docs/daily-workflow-guide.md) - Scenario-based usage guide and Skill reference
 - [Configuration Reference](docs/config-reference.md) - Complete configuration file documentation
 - [Best Practices](docs/best-practices.md) - Usage tips and optimization techniques
 - [Plugin Development](docs/plugin-development.md) - Plugin architecture and development guide

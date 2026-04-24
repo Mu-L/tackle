@@ -11,6 +11,7 @@ docs/*
 !docs/ai_workflow.md
 !docs/installation.md
 !docs/plugin-development.md
+!docs/daily-workflow-guide.md
 task.md
 
 # Node

@@ -65,61 +65,13 @@ npx tackle-harness validate   # 验证插件完整性
 
 ## 使用场景
 
-### 场景一：新功能开发
+- **新功能开发** — 需求分析 → 拆分工作包 → 并行开发 → 质量检查
+- **Bug 批量修复** — 依赖分析 → 并行修复 → 自动验证
+- **系统重构** — 架构分析 → 分批执行 → 经验沉淀
+- **代码审查** — 质量检查 → 文档同步 → 经验记录
+- **项目收尾** — 进度汇总 → 经验沉淀 → 完成报告
 
-**你的情况**：需要为 SaaS 产品添加「团队协作」模块，涉及前端界面、后端 API 和数据库变更。
-
-**你只需要说**：
-```
-开始工作流，实现团队协作模块，包括：
-- 团队创建和管理页面
-- 成员邀请和权限 API
-- 数据库表设计
-```
-
-**Tackle Harness 会做什么**：
-1. 分析需求复杂度，拆分为 4 个工作包（前端、后端、数据库、集成测试）
-2. 输出每个工作包的实施方案，暂停等你审核
-3. 你确认后，调度多个 Agent 并行开发各模块
-4. 自动执行代码检查和测试验证
-5. 生成完成报告，询问你下一步
-
-**涉及技能**：workflow-orchestrator → split-work-package → human-checkpoint → agent-dispatcher → checklist → completion-report
-
-### 场景二：Bug 批量修复
-
-**你的情况**：Sprint 结束前积压了 5 个 Bug，希望能并行处理尽快收尾。
-
-**你只需要说**：
-```
-批量执行 WP-015 到 WP-019，并行修复这 5 个 Bug
-```
-
-**Tackle Harness 会做什么**：
-1. 分析 5 个 Bug 之间的依赖关系（有没有改动同一文件）
-2. 无冲突的 Bug 分配给不同 Agent 同时修复
-3. 有依赖的 Bug 按顺序排队，前一个完成后自动启动下一个
-4. 全部修复后运行检查清单，确认没有引入新问题
-
-**涉及技能**：agent-dispatcher → checklist → completion-report
-
-### 场景三：系统重构
-
-**你的情况**：需要将单体应用拆分为微服务架构，涉及多个模块的协调改动，担心改出问题。
-
-**你只需要说**：
-```
-拆分工作包，将用户模块从单体应用中拆分为独立服务
-```
-
-**Tackle Harness 会做什么**：
-1. 深入分析代码结构，识别所有需要改动的模块和依赖关系
-2. 生成详细的重构计划（接口抽取、数据迁移、路由调整等）
-3. 暂停等你审核架构方案（这是关键决策点）
-4. 按依赖顺序分批执行重构，每批完成后自动验证
-5. 记录重构经验，下次类似的拆分任务可以直接参考
-
-**涉及技能**：split-work-package → human-checkpoint → agent-dispatcher → checklist → experience-logger → completion-report
+> 完整的场景流程图和操作步骤请参阅 [日常工作流最佳实践](docs/daily-workflow-guide.md)
 
 ## 命令一览
 
@@ -146,6 +98,7 @@ npx tackle-harness validate   # 验证插件完整性
 | checklist | "运行检查" / "run checklist" | 执行检查清单 |
 | completion-report | "完成报告" / "completion report" | 生成完成报告 |
 | experience-logger | "总结经验" / "log experience" | 记录项目经验教训 |
+| watchdog-manager | "启动守护进程" / "start watchdog" | 启动和管理后台守护进程 |
 | agent-dispatcher | "批量执行" / "dispatch agents" | 调度多个子代理并行工作 |
 | workflow-orchestrator | "开始工作流" / "start workflow" | 编排完整工作流 |
 
@@ -169,12 +122,12 @@ npx tackle-harness validate   # 验证插件完整性
 
 ## 插件架构
 
-Tackle Harness 包含四类插件，共 19 个：
+Tackle Harness 包含四类插件，共 21 个：
 
 | 类型 | 数量 | 作用 |
 |------|------|------|
-| Skill | 12 | 可执行技能，Claude Code 直接调用 |
-| Provider | 3 | 状态存储、角色注册、记忆存储 |
+| Skill | 13 | 可执行技能，Claude Code 直接调用 |
+| Provider | 4 | 状态存储、角色注册、记忆存储、守护进程 |
 | Hook | 2 | 技能门控 + 会话启动时注入 plan-mode 规则 |
 | Validator | 2 | 文档同步验证、工作包验证 |
 
@@ -198,6 +151,7 @@ your-project/
       skill-checklist/skill.md
       skill-completion-report/skill.md
       skill-experience-logger/skill.md
+      skill-watchdog-manager/skill.md
       skill-agent-dispatcher/skill.md
       skill-workflow-orchestrator/skill.md
     hooks/                           # 2 个 hook
@@ -244,6 +198,7 @@ npm uninstall tackle-harness
 
 ## 文档
 
+- [日常工作流最佳实践](docs/daily-workflow-guide.md) - 按场景的使用手册和 Skill 速查
 - [配置参考](docs/config-reference.md) - 完整的配置文件说明
 - [最佳实践](docs/best-practices.md) - 使用建议和优化技巧
 - [插件开发](docs/plugin-development.md) - 插件架构和开发指南
