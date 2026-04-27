@@ -189,10 +189,12 @@ cat .claude/settings.json
 | `tackle-harness validate` | 验证插件格式 |
 | `tackle-harness validate-config` | 验证 harness-config.yaml |
 | `tackle-harness init` | 首次配置（build + 生成配置） |
+| `tackle-harness interactive` | 交互式插件管理（别名：`i`） |
 | `tackle-harness status` | 显示构建状态和插件统计 |
 | `tackle-harness config` | 显示/验证当前配置 |
 | `tackle-harness list` | 列出所有已注册插件 |
 | `tackle-harness version` | 显示版本信息 |
+| `tackle-harness help` | 显示帮助信息 |
 | `tackle-harness --root <path>` | 指定目标项目路径 |
 | `tackle-harness --verbose` | 显示详细构建输出 |
 | `tackle-harness --no-color` | 禁用彩色输出 |

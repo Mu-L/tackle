@@ -118,7 +118,10 @@
           "schedules": [
             {
               "name": "peak",
-              "time_range": { "start": "14:00", "end": "18:00" },
+              "time_range": {
+                "start": "14:00",
+                "end": "18:00"
+              },
               "max_concurrent": 3
             }
           ]

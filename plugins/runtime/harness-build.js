@@ -1270,54 +1270,20 @@ HarnessBuild.prototype.updateSettings = function updateSettings(targetRoot, pack
   var hookScriptRelative = path.relative(targetRoot, hookScriptPath).replace(/\\/g, '/');
   var hookCmd = 'node "' + hookScriptRelative + '"';
 
-  // Add PreToolUse hook for Edit|Write (if not already present)
+  // Update or add PreToolUse hook for Edit|Write
   var preMatcher = 'Edit|Write';
-  var preExists = settings.hooks.PreToolUse.some(function (h) {
-    return h.matcher === preMatcher;
-  });
-  if (!preExists) {
-    settings.hooks.PreToolUse.push({
-      matcher: preMatcher,
-      hooks: [{
-        type: 'command',
-        command: hookCmd + ' --pre-tool'
-      }]
-    });
-  }
+  _upsertHookEntry(settings.hooks.PreToolUse, preMatcher, hookCmd + ' --pre-tool');
 
-  // Add PostToolUse hook for Skill (if not already present)
+  // Update or add PostToolUse hook for Skill
   var postMatcher = 'Skill';
-  var postExists = settings.hooks.PostToolUse.some(function (h) {
-    return h.matcher === postMatcher;
-  });
-  if (!postExists) {
-    settings.hooks.PostToolUse.push({
-      matcher: postMatcher,
-      hooks: [{
-        type: 'command',
-        command: hookCmd + ' --post-skill'
-      }]
-    });
-  }
+  _upsertHookEntry(settings.hooks.PostToolUse, postMatcher, hookCmd + ' --post-skill');
 
-  // Add SessionStart hook for plan-mode rule injection
+  // Update or add SessionStart hook for plan-mode rule injection
   var sessionHookScriptPath = path.join(packageRoot, 'plugins', 'core', 'hook-session-start', 'index.js');
   var sessionHookRelative = path.relative(targetRoot, sessionHookScriptPath).replace(/\\/g, '/');
   var sessionHookCmd = 'node "' + sessionHookRelative + '"';
-
   var sessionMatcher = 'startup|clear|compact';
-  var sessionExists = settings.hooks.SessionStart.some(function (h) {
-    return h.matcher === sessionMatcher;
-  });
-  if (!sessionExists) {
-    settings.hooks.SessionStart.push({
-      matcher: sessionMatcher,
-      hooks: [{
-        type: 'command',
-        command: sessionHookCmd
-      }]
-    });
-  }
+  _upsertHookEntry(settings.hooks.SessionStart, sessionMatcher, sessionHookCmd);
 
   // Write back
   this._ensureDir(path.dirname(settingsPath));
@@ -1401,6 +1367,27 @@ HarnessBuild.prototype._buildClaudeMdRuleBlock = function _buildClaudeMdRuleBloc
 
   return lines.join('\n');
 };
+
+/**
+ * Update or insert a hook entry in a hooks array.
+ * If a hook with the same matcher exists, update its command; otherwise add a new entry.
+ *
+ * @param {object[]} hookArray - the hooks array (e.g. settings.hooks.PreToolUse)
+ * @param {string} matcher - the matcher string (e.g. 'Edit|Write')
+ * @param {string} command - the full command string
+ */
+function _upsertHookEntry(hookArray, matcher, command) {
+  for (var i = 0; i < hookArray.length; i++) {
+    if (hookArray[i].matcher === matcher) {
+      hookArray[i].hooks = [{ type: 'command', command: command }];
+      return;
+    }
+  }
+  hookArray.push({
+    matcher: matcher,
+    hooks: [{ type: 'command', command: command }]
+  });
+}
 
 /**
  * Inject tackle-harness managed rules into the target project's CLAUDE.md.

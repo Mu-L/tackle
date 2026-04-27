@@ -3,7 +3,8 @@
 > A plugin-based AI Agent workflow framework that provides task management, workflow orchestration, and role management for Claude Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.0.14-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.15-blue.svg)](https://github.com/ph419/tackle)
+[![CI](https://github.com/ph419/tackle/actions/workflows/ci.yml/badge.svg)](https://github.com/ph419/tackle/actions/workflows/ci.yml)
 
 **[中文文档](README.md)**
 
@@ -126,9 +127,17 @@ Split work package, extract the user module from the monolith into an independen
 | `npx tackle-harness` | Default: runs build |
 | `npx tackle-harness build` | Build all skills, update .claude/settings.json |
 | `npx tackle-harness validate` | Validate plugin format |
+| `npx tackle-harness validate-config` | Validate harness-config.yaml |
 | `npx tackle-harness init` | First-time setup: build + create .claude/ directories |
+| `npx tackle-harness interactive` | Interactive plugin management (alias: `i`) |
+| `npx tackle-harness status` | Show build status and plugin statistics |
+| `npx tackle-harness config` | Show/validate current configuration |
+| `npx tackle-harness list` | List all registered plugins |
+| `npx tackle-harness version` | Show version information |
+| `npx tackle-harness help` | Show help message |
 | `npx tackle-harness --root <path>` | Specify target project path (default: current directory) |
-| `npx tackle-harness --help` | Show help |
+| `npx tackle-harness --help` | Show help message |
+| `npx tackle-harness --version, -v` | Show version information |
 
 ## Skills Reference
 
@@ -242,12 +251,52 @@ Skill files remain in `.claude/skills/`. Delete manually if needed.
 
 These hooks point to scripts in `node_modules/tackle-harness/` and won't affect other configurations in your project. Existing settings.json content is preserved; only tackle-harness-related hooks are appended.
 
+### How to use interactive mode?
+
+```bash
+npx tackle-harness interactive
+# or use alias
+npx tackle-harness i
+```
+
+Interactive mode provides a visual plugin management interface:
+- View status of all registered plugins
+- Enable/disable plugins
+- View plugin dependencies
+- Run plugin validation
+
+### CI/CD Integration
+
+Using Tackle Harness in CI environments:
+
+```yaml
+- name: Setup Tackle Harness
+  run: |
+    npm install tackle-harness
+    npx tackle-harness build --root $GITHUB_WORKSPACE
+```
+
+The project includes GitHub Actions workflows that automatically run tests on PRs and pushes.
+
 ## Documentation
 
 - [Daily Workflow Best Practices](docs/daily-workflow-guide.md) - Scenario-based usage guide and Skill reference
 - [Configuration Reference](docs/config-reference.md) - Complete configuration file documentation
 - [Plugin Development](docs/plugin-development.md) - Plugin architecture and development guide
 - [Workflow Details](docs/ai_workflow.md) - Full workflow data flow and stage descriptions
+
+## Example Projects
+
+See the [examples/](examples/) directory for complete example projects:
+- **[minimal](examples/minimal/)** — Minimal example project showing basic integration and configuration
+
+## Continuous Integration
+
+The project uses GitHub Actions for CI/CD:
+- **CI Workflow** — Runs test matrix on Node.js 18 and 20
+- **Publish Workflow** — Tag-triggered npm publishing
+
+See [.github/workflows/](.github/workflows/) for details
 
 ## Contributing
 

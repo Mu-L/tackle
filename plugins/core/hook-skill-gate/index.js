@@ -340,12 +340,22 @@ class SkillGateHook extends HookPlugin {
 
 /**
  * Read all data from stdin and parse as JSON.
+ * Sanitizes input to prevent prototype pollution and limits size.
  * @param {function} callback - callback(error, data)
  */
 function readStdin(callback) {
   var chunks = [];
+  var totalSize = 0;
+  var MAX_SIZE = 1024 * 1024; // 1MB limit
+
   process.stdin.setEncoding('utf-8');
   process.stdin.on('data', function (chunk) {
+    totalSize += chunk.length;
+    if (totalSize > MAX_SIZE) {
+      process.stdin.destroy();
+      callback(new Error('Input exceeds maximum size limit'));
+      return;
+    }
     chunks.push(chunk);
   });
   process.stdin.on('end', function () {
@@ -355,14 +365,52 @@ function readStdin(callback) {
     }
     try {
       var parsed = JSON.parse(raw);
-      callback(null, parsed);
+
+      // Prevent prototype pollution: strip dangerous keys
+      var sanitized = sanitizeObject(parsed);
+      callback(null, sanitized);
     } catch (e) {
-      callback(e);
+      callback(new Error('Invalid JSON input'));
     }
   });
   process.stdin.on('error', function (err) {
-    callback(err);
+    callback(new Error('Failed to read stdin'));
   });
+}
+
+/**
+ * Sanitize an object to prevent prototype pollution attacks.
+ * Removes __proto__, constructor, and prototype properties.
+ * @param {*} obj - object to sanitize
+ * @returns {*} sanitized object
+ */
+function sanitizeObject(obj) {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeObject);
+  }
+
+  var result = {};
+  var keys = Object.keys(obj); // Object.keys ignores prototype chain
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+
+    // Block dangerous property names that could cause prototype pollution
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+
+    // Recursively sanitize nested objects
+    try {
+      result[key] = sanitizeObject(obj[key]);
+    } catch (e) {
+      // Skip values that cause errors during sanitization
+    }
+  }
+  return result;
 }
 
 /**

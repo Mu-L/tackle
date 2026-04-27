@@ -6,6 +6,19 @@
  *   - JSON file persistence via filesystem adapter
  *   - Auto-creates state file on first write
  *   - In-memory caching to minimize disk reads
+ *   - Atomic writes using write-to-temp + rename pattern
+ *   - Automatic corruption recovery with backup
+ *
+ * SECURITY NOTES:
+ *   - File permissions set to 0600 (owner read/write only)
+ *   - Directory permissions set to 0700 (owner read/write/execute only)
+ *   - Unique temp file names prevent collision attacks
+ *
+ * CONCURRENCY NOTES:
+ *   - This implementation is NOT safe for concurrent writes from multiple processes.
+ *   - Concurrent writes may result in last-write-wins data loss.
+ *   - For multi-process scenarios, consider using an external lock file or database.
+ *   - Single-process concurrent operations are safe due to Node.js single-threaded nature.
  */
 
 'use strict';
@@ -15,14 +28,28 @@ var path = require('path');
 
 /**
  * Filesystem adapter for StateStore.
- * Reads/writes a JSON file to disk.
+ * Reads/writes a JSON file to disk with fault tolerance.
  */
 class FileSystemAdapter {
   /**
    * @param {string} filePath - absolute path to the state file
+   * @param {object} [logger] - optional logger instance
    */
-  constructor(filePath) {
+  constructor(filePath, logger) {
     this.filePath = filePath;
+    this.logger = logger;
+  }
+
+  /**
+   * Log a warning message if logger is available.
+   * @param {string} msg
+   */
+  _warn(msg) {
+    if (this.logger && this.logger.warn) {
+      this.logger.warn('[StateStore] ' + msg);
+    } else {
+      console.warn('[StateStore] ' + msg);
+    }
   }
 
   /**
@@ -30,26 +57,80 @@ class FileSystemAdapter {
    * @returns {object} parsed JSON state, or empty object if file missing/corrupt
    */
   read() {
+    // Check if file exists first
+    if (!fs.existsSync(this.filePath)) {
+      // File doesn't exist - auto-create empty state
+      return {};
+    }
+
     try {
       var content = fs.readFileSync(this.filePath, 'utf-8');
+
+      // Check for empty file
+      if (!content || content.trim() === '') {
+        this._warn('State file is empty, initializing empty state');
+        return {};
+      }
+
       return JSON.parse(content);
     } catch (err) {
-      // File does not exist or is invalid JSON - return empty state
+      // File exists but content is corrupt
+      var backupPath = this.filePath + '.corrupt.' + Date.now();
+      try {
+        fs.copyFileSync(this.filePath, backupPath);
+        this._warn('Corrupt state file backed up to: ' + backupPath);
+      } catch (backupErr) {
+        // Backup failed, but continue with recovery
+      }
+
+      this._warn('State file is corrupt (invalid JSON), recovering with empty state');
       return {};
     }
   }
 
   /**
-   * Write the entire state to disk.
+   * Write the entire state to disk using atomic write pattern.
    * Creates parent directories if needed.
+   * Uses write-to-temp + rename for atomicity.
+   *
+   * SECURITY: Uses unique temp file names to prevent collision and
+   * sets secure file permissions (owner read/write only).
+   *
    * @param {object} data - serializable state object
    */
   write(data) {
     var dir = path.dirname(this.filePath);
     if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+      // Create directory with secure permissions (owner read/write/execute only)
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
-    fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), 'utf-8');
+
+    // Atomic write: write to temp file with unique name, then rename
+    // Use PID and timestamp for uniqueness to prevent collisions in concurrent scenarios
+    var tempPath = this.filePath + '.tmp.' + process.pid + '.' + Date.now();
+    var content = JSON.stringify(data, null, 2);
+
+    try {
+      // Write to temp file with secure permissions (owner read/write only)
+      fs.writeFileSync(tempPath, content, {
+        encoding: 'utf-8',
+        mode: 0o600
+      });
+
+      // Atomic rename (overwrites target if exists)
+      // This is atomic on most filesystems (POSIX, Windows)
+      fs.renameSync(tempPath, this.filePath);
+    } catch (err) {
+      // Clean up temp file if something went wrong
+      try {
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+      } catch (cleanupErr) {
+        // Ignore cleanup errors
+      }
+      throw err;
+    }
   }
 }
 
@@ -83,13 +164,15 @@ class StateStore {
       this._adapter = options.adapter;
     } else {
       var filePath = options.filePath || path.join(process.cwd(), '.claude-state');
-      this._adapter = new FileSystemAdapter(filePath);
+      this._adapter = new FileSystemAdapter(filePath, options.logger);
     }
 
     /** @type {object|null} cached state, null means not loaded yet */
     this._cache = null;
     /** @type {Map<string, Function[]>} key -> subscribers */
     this._subscribers = new Map();
+    /** @type {object} logger instance */
+    this._logger = options.logger;
   }
 
   // --- public API ---

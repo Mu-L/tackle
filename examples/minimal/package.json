@@ -1,0 +1,15 @@
+{
+  "name": "tackle-harness-example-minimal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tackle Harness 最小示例项目",
+  "scripts": {
+    "init": "npx tackle-harness init --root .",
+    "build": "npx tackle-harness build --root .",
+    "validate": "npx tackle-harness validate --root .",
+    "status": "npx tackle-harness status --root ."
+  },
+  "devDependencies": {
+    "tackle-harness": "^0.0.14"
+  }
+}

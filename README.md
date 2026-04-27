@@ -3,7 +3,8 @@
 > 基于插件的 AI Agent 工作流框架，为 Claude Code 提供任务管理、工作流编排、角色管理等能力
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.0.14-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.15-blue.svg)](https://github.com/ph419/tackle)
+[![CI](https://github.com/ph419/tackle/actions/workflows/ci.yml/badge.svg)](https://github.com/ph419/tackle/actions/workflows/ci.yml)
 
 **[English](README.en.md)**
 
@@ -80,9 +81,17 @@ npx tackle-harness validate   # 验证插件完整性
 | `npx tackle-harness` | 默认执行 build |
 | `npx tackle-harness build` | 构建所有技能，更新 .claude/settings.json |
 | `npx tackle-harness validate` | 验证插件格式是否正确 |
+| `npx tackle-harness validate-config` | 验证 harness-config.yaml |
 | `npx tackle-harness init` | 首次安装：build + 创建 .claude/ 目录 |
+| `npx tackle-harness interactive` | 交互式插件管理（别名：`i`） |
+| `npx tackle-harness status` | 显示构建状态和插件统计信息 |
+| `npx tackle-harness config` | 显示/验证当前配置 |
+| `npx tackle-harness list` | 列出所有已注册的插件 |
+| `npx tackle-harness version` | 显示版本信息 |
+| `npx tackle-harness help` | 显示帮助信息 |
 | `npx tackle-harness --root <path>` | 指定目标项目路径（默认为当前目录） |
 | `npx tackle-harness --help` | 查看帮助信息 |
+| `npx tackle-harness --version, -v` | 显示版本信息 |
 
 ## 技能清单
 
@@ -196,12 +205,52 @@ npm uninstall tackle-harness
 
 这些 hook 指向 `node_modules/tackle-harness/` 中的脚本，不会影响你项目中的其他配置。已有的 settings.json 内容会被保留，仅追加 tackle-harness 相关的 hooks。
 
+### 如何使用交互式模式？
+
+```bash
+npx tackle-harness interactive
+# 或使用别名
+npx tackle-harness i
+```
+
+交互式模式提供可视化的插件管理界面，支持：
+- 查看所有已注册插件的状态
+- 启用/停用插件
+- 查看插件依赖关系
+- 执行插件验证
+
+### CI/CD 如何集成？
+
+在 CI 环境中使用 Tackle Harness：
+
+```yaml
+- name: Setup Tackle Harness
+  run: |
+    npm install tackle-harness
+    npx tackle-harness build --root $GITHUB_WORKSPACE
+```
+
+项目已配置 GitHub Actions 工作流，提交 PR 或推送代码会自动运行测试。
+
 ## 文档
 
 - [日常工作流最佳实践](docs/daily-workflow-guide.md) - 按场景的使用手册和 Skill 速查
 - [配置参考](docs/config-reference.md) - 完整的配置文件说明
 - [插件开发](docs/plugin-development.md) - 插件架构和开发指南
 - [工作流详解](docs/ai_workflow.md) - 完整的工作流数据流和阶段说明
+
+## 示例项目
+
+查看 [examples/](examples/) 目录获取完整的示例项目：
+- **[minimal](examples/minimal/)** — 最小示例项目，展示基本集成方式和配置
+
+## 持续集成
+
+项目使用 GitHub Actions 进行 CI/CD：
+- **CI 工作流** — 在 Node.js 18 和 20 上运行测试矩阵
+- **发布工作流** — Tag 触发自动发布到 npm
+
+详见 [.github/workflows/](.github/workflows/)
 
 ## 贡献
 

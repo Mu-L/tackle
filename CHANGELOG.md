@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.15] - 2026-04-27
+
+### Added
+
+- Interactive CLI 模式 (`tackle-harness interactive` / `tackle-harness i`)，支持交互式插件管理
+- GitHub Actions CI/CD 工作流（ci.yml: Node 18/20 矩阵测试 + publish.yml: tag 触发 npm 发布）
+- 示例项目目录 (`examples/minimal`)
+- State Store 原子写入（write-to-temp + rename）和损坏自动恢复
+
+### Changed
+
+- harness-build hook 注册改为幂等 upsert 模式 (`_upsertHookEntry`)
+
+### Fixed
+
+- hook-skill-gate stdin 安全加固：1MB 大小限制 + prototype pollution 防护 + 错误信息脱敏
+- `--root` 路径穿越安全检查
+- 仓库 URL 从 `anthropics/tackle-harness` 修正为 `ph419/tackle`
+
 ## [0.0.14] - 2026-04-24
 
 ### Fixed
@@ -129,17 +148,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.0.15]: https://github.com/ph419/tackle/compare/v0.0.14...v0.0.15
 [0.0.14]: https://github.com/ph419/tackle/compare/v0.0.13...v0.0.14
 [0.0.13]: https://github.com/ph419/tackle/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/ph419/tackle/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/ph419/tackle/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/ph419/tackle/compare/v0.0.9...v0.0.10
-[0.0.9]: https://github.com/user/tackle-harness/compare/v0.0.8...v0.0.9
-[0.0.8]: https://github.com/user/tackle-harness/compare/v0.0.7...v0.0.8
-[0.0.7]: https://github.com/user/tackle-harness/compare/v0.0.6...v0.0.7
-[0.0.6]: https://github.com/user/tackle-harness/compare/v0.0.5...v0.0.6
-[0.0.5]: https://github.com/user/tackle-harness/compare/v0.0.4...v0.0.5
-[0.0.4]: https://github.com/user/tackle-harness/compare/v0.0.3...v0.0.4
-[0.0.3]: https://github.com/user/tackle-harness/compare/v0.0.2...v0.0.3
-[0.0.2]: https://github.com/user/tackle-harness/compare/v0.0.1...v0.0.2
-[0.0.1]: https://github.com/user/tackle-harness/releases/tag/v0.0.1
+[0.0.9]: https://github.com/ph419/tackle/compare/v0.0.8...v0.0.9
+[0.0.8]: https://github.com/ph419/tackle/compare/v0.0.7...v0.0.8
+[0.0.7]: https://github.com/ph419/tackle/compare/v0.0.6...v0.0.7
+[0.0.6]: https://github.com/ph419/tackle/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/ph419/tackle/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/ph419/tackle/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/ph419/tackle/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/ph419/tackle/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/ph419/tackle/releases/tag/v0.0.1

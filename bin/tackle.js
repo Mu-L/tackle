@@ -10,6 +10,7 @@
  *   tackle-harness status      Show build status and plugin statistics
  *   tackle-harness config      Show/validate current configuration
  *   tackle-harness list        List all registered plugins
+ *   tackle-harness interactive Interactive plugin management (alias: i)
  *   tackle-harness version     Show version information
  *   tackle-harness --help      Show usage info
  *
@@ -23,6 +24,7 @@
 
 var path = require('path');
 var fs = require('fs');
+var readline = require('readline');
 var HarnessBuild = require('../plugins/runtime/harness-build');
 
 // Read package version
@@ -81,13 +83,8 @@ if (flags.help) {
   command = filteredArgs[0] || 'build';
 }
 
-// Override target root if --root flag provided
-if (flags.root) {
-  targetRoot = path.resolve(flags.root);
-}
-
 // ---------------------------------------------------------------------------
-// Color output support
+// Color output support (must be defined before --root flag handling)
 // ---------------------------------------------------------------------------
 
 var colors = {
@@ -112,9 +109,37 @@ function colorize(text, color) {
   return (colors[color] || '') + text + (colors.reset || '');
 }
 
-// ---------------------------------------------------------------------------
-// Helper: create builder instance with correct paths
-// ---------------------------------------------------------------------------
+// Override target root if --root flag provided
+if (flags.root) {
+  var resolvedRoot = path.resolve(flags.root);
+
+  // Security check: prevent path traversal attacks
+  // Ensure the resolved path is accessible and doesn't escape obvious boundaries
+  var normalizedPath = path.normalize(resolvedRoot);
+
+  // Additional safety: verify the path exists or can be created
+  try {
+    var stats = fs.statSync(normalizedPath);
+    if (!stats.isDirectory()) {
+      console.error(colorize('Error: --root path must be a directory', 'red'));
+      process.exit(1);
+    }
+  } catch (e) {
+    // Path doesn't exist yet - this is OK for 'init' command
+    if (command !== 'init') {
+      console.error(colorize('Error: --root path does not exist: ' + normalizedPath, 'red'));
+      process.exit(1);
+    }
+  }
+
+  // Warn if using relative path that resolves outside cwd
+  var cwdResolved = path.resolve(flags.root);
+  if (cwdResolved.indexOf(process.cwd()) !== 0 && command !== 'init') {
+    console.warn(colorize('Warning: --root path is outside current working directory', 'yellow'));
+  }
+
+  targetRoot = normalizedPath;
+}
 
 function createBuilder() {
   return new HarnessBuild({
@@ -168,6 +193,8 @@ function cmdBuild() {
  * Remove stale output directories from disabled plugins.
  * Only removes directories whose names match a registered-but-disabled plugin.
  * User-created directories that don't match any plugin name are preserved.
+ *
+ * SECURITY: Ensures all deletion operations stay within the expected output directories.
  */
 function _cleanStaleOutput(builder) {
   var registry = builder._readRegistry();
@@ -203,14 +230,37 @@ function _cleanStaleOutput(builder) {
 
   for (var d = 0; d < outputDirs.length; d++) {
     var dir = outputDirs[d];
+
+    // Security check: ensure the directory is within the expected output tree
+    var normalizedDir = path.normalize(dir);
+    if (normalizedDir.indexOf(path.normalize(targetRoot)) !== 0) {
+      console.log(colorize('[tackle-harness] Warning: skipping suspicious output directory', 'yellow'));
+      continue;
+    }
+
     if (!fs.existsSync(dir)) continue;
     var entries;
     try { entries = fs.readdirSync(dir); } catch (e) { continue; }
     for (var e = 0; e < entries.length; e++) {
       var entryName = entries[e];
+
+      // Security: prevent path traversal in entry names
+      if (entryName.indexOf('..') !== -1 || entryName.indexOf('/') !== -1 || entryName.indexOf('\\') !== -1) {
+        console.log(colorize('[tackle-harness] Warning: skipping suspicious entry name', 'yellow'));
+        continue;
+      }
+
       // Only clean up if: directory name belongs to a registered disabled plugin
       if (disabledNames[entryName] && !enabledNames[entryName]) {
         var stalePath = path.join(dir, entryName);
+
+        // Final security check: verify the path is still within the output directory
+        var normalizedStalePath = path.normalize(stalePath);
+        if (normalizedStalePath.indexOf(normalizedDir) !== 0) {
+          console.log(colorize('[tackle-harness] Warning: skipping suspicious stale path', 'yellow'));
+          continue;
+        }
+
         try {
           fs.rmSync(stalePath, { recursive: true, force: true });
           console.log(colorize('[tackle-harness] Cleaned disabled plugin output: ' + entryName, 'yellow'));
@@ -286,6 +336,7 @@ function cmdHelp() {
     ['status', 'Show build status and plugin statistics'],
     ['config', 'Show/validate current configuration'],
     ['list', 'List all registered plugins'],
+    ['interactive', 'Interactive plugin management (alias: i)'],
     ['version', 'Show version information'],
     ['help', 'Show this help message'],
   ];
@@ -626,6 +677,307 @@ function cmdVersion() {
   process.exit(0);
 }
 
+function cmdInteractive() {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const registryPath = path.join(packageRoot, 'plugins', 'plugin-registry.json');
+  let registry;
+
+  try {
+    registry = JSON.parse(fs.readFileSync(registryPath, 'utf-8'));
+  } catch (e) {
+    console.error(colorize('Error: Failed to read plugin registry: ' + e.message, 'red'));
+    process.exit(1);
+  }
+
+  const plugins = registry.plugins || [];
+
+  function showMenu() {
+    console.log('');
+    console.log(colorize('=== Tackle Harness - Interactive Mode ===', 'cyan'));
+    console.log('');
+    console.log('  [L] 列出插件 (List plugins)');
+    console.log('  [T] 切换插件 (Toggle plugin)');
+    console.log('  [V] 查看详情 (View details)');
+    console.log('  [R] 重新构建 (Rebuild)');
+    console.log('  [Q] 退出 (Quit)');
+    console.log('');
+  }
+
+  function listPlugins() {
+    console.log('');
+    console.log(colorize('--- 插件列表 (Plugin List) ---', 'cyan'));
+    console.log('');
+
+    const byType = {
+      skill: [],
+      hook: [],
+      validator: [],
+      provider: [],
+      unknown: []
+    };
+
+    for (let i = 0; i < plugins.length; i++) {
+      const p = plugins[i];
+      const pluginDir = path.join(packageRoot, 'plugins', 'core', p.source || p.name);
+      const metaPath = path.join(pluginDir, 'plugin.json');
+      let type = 'unknown';
+      let description = '';
+
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+          type = meta.type || 'unknown';
+          description = meta.description || '';
+        } catch (e) {
+          // use defaults
+        }
+      }
+
+      const enabled = p.enabled !== false;
+      const statusStr = enabled ? colorize('enabled', 'green') : colorize('disabled', 'dim');
+
+      byType[type].push({
+        name: p.name,
+        status: statusStr,
+        enabled: enabled,
+        description: description
+      });
+    }
+
+    const typeOrder = ['skill', 'hook', 'validator', 'provider'];
+    for (let t = 0; t < typeOrder.length; t++) {
+      const typeName = typeOrder[t];
+      const typePlugins = byType[typeName];
+
+      if (typePlugins.length > 0) {
+        console.log(colorize(typeName.charAt(0).toUpperCase() + typeName.slice(1) + ' Plugins:', 'cyan'));
+
+        let maxNameLen = 0;
+        for (let j = 0; j < typePlugins.length; j++) {
+          if (typePlugins[j].name.length > maxNameLen) {
+            maxNameLen = typePlugins[j].name.length;
+          }
+        }
+
+        for (let k = 0; k < typePlugins.length; k++) {
+          const plugin = typePlugins[k];
+          const namePadding = ' '.repeat(maxNameLen - plugin.name.length + 2);
+          console.log('  ' + plugin.name + namePadding + '[' + plugin.status + ']');
+          if (plugin.description) {
+            console.log('    ' + colorize(plugin.description, 'dim'));
+          }
+        }
+        console.log('');
+      }
+    }
+
+    const enabledCount = plugins.filter(function (p) { return p.enabled !== false; }).length;
+    console.log('Total: ' + plugins.length + ' plugins | Enabled: ' + colorize(enabledCount, 'green') + ', Disabled: ' + colorize(plugins.length - enabledCount, 'dim'));
+  }
+
+  function togglePlugin(pluginName) {
+    let plugin = null;
+    let pluginIndex = -1;
+
+    for (let i = 0; i < plugins.length; i++) {
+      if (plugins[i].name.toLowerCase() === pluginName.toLowerCase()) {
+        plugin = plugins[i];
+        pluginIndex = i;
+        break;
+      }
+    }
+
+    if (!plugin) {
+      console.log('');
+      console.log(colorize('Error: Plugin not found: ' + pluginName, 'red'));
+      return;
+    }
+
+    const newEnabled = plugin.enabled === false;
+    plugin.enabled = newEnabled;
+
+    registry.plugins = plugins;
+
+    try {
+      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf-8');
+      console.log('');
+      console.log(colorize('Plugin "' + plugin.name + '" is now ' + (newEnabled ? 'enabled' : 'disabled'), 'green'));
+
+      rl.question(colorize('是否重新构建? (y/N): ', 'yellow'), function (answer) {
+        if (answer && answer.toLowerCase() === 'y') {
+          console.log('');
+          console.log(colorize('[tackle-harness] Rebuilding plugins...', 'cyan'));
+          const builder = createBuilder();
+          const result = builder.build();
+
+          if (result.success) {
+            if (flags.verbose) {
+              console.log(colorize('[tackle-harness] Updating settings.json...', 'dim'));
+            }
+            builder.updateSettings(targetRoot, packageRoot);
+            builder.injectClaudeMdRules(targetRoot);
+            _cleanStaleOutput(builder);
+          }
+
+          const coloredSummary = result.summary
+            .replace(/Build SUCCEEDED/g, colorize('Build SUCCEEDED', 'green'))
+            .replace(/Build COMPLETED WITH ERRORS/g, colorize('Build COMPLETED WITH ERRORS', 'yellow'))
+            .replace(/Validation PASSED/g, colorize('Validation PASSED', 'green'))
+            .replace(/Validation FAILED/g, colorize('Validation FAILED', 'red'));
+
+          console.log(coloredSummary);
+        }
+        showMenu();
+        prompt();
+      });
+    } catch (e) {
+      console.log('');
+      console.error(colorize('Error: Failed to update registry: ' + e.message, 'red'));
+    }
+  }
+
+  function viewDetails(pluginName) {
+    let plugin = null;
+
+    for (let i = 0; i < plugins.length; i++) {
+      if (plugins[i].name.toLowerCase() === pluginName.toLowerCase()) {
+        plugin = plugins[i];
+        break;
+      }
+    }
+
+    if (!plugin) {
+      console.log('');
+      console.log(colorize('Error: Plugin not found: ' + pluginName, 'red'));
+      return;
+    }
+
+    console.log('');
+    console.log(colorize('--- Plugin Details: ' + plugin.name + ' ---', 'cyan'));
+    console.log('');
+    console.log('Name:    ' + plugin.name);
+    console.log('Source:  ' + (plugin.source || '-'));
+    console.log('Status:  ' + (plugin.enabled !== false ? colorize('enabled', 'green') : colorize('disabled', 'dim')));
+
+    const pluginDir = path.join(packageRoot, 'plugins', 'core', plugin.source || plugin.name);
+    const metaPath = path.join(pluginDir, 'plugin.json');
+
+    if (fs.existsSync(metaPath)) {
+      try {
+        const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
+
+        if (meta.type) {
+          console.log('Type:    ' + meta.type);
+        }
+        if (meta.version) {
+          console.log('Version: ' + meta.version);
+        }
+        if (meta.description) {
+          console.log('');
+          console.log('Description:');
+          console.log('  ' + meta.description);
+        }
+        if (meta.dependencies && meta.dependencies.length > 0) {
+          console.log('');
+          console.log('Dependencies:');
+          for (let i = 0; i < meta.dependencies.length; i++) {
+            console.log('  - ' + meta.dependencies[i]);
+          }
+        }
+        if (plugin.config && Object.keys(plugin.config).length > 0) {
+          console.log('');
+          console.log('Configuration:');
+          for (const key in plugin.config) {
+            if (plugin.config.hasOwnProperty(key)) {
+              const value = plugin.config[key];
+              if (typeof value === 'object') {
+                console.log('  ' + key + ': ' + JSON.stringify(value));
+              } else {
+                console.log('  ' + key + ': ' + value);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log('');
+        console.log(colorize('Warning: Failed to parse plugin metadata', 'yellow'));
+      }
+    }
+  }
+
+  function rebuild() {
+    console.log('');
+    console.log(colorize('[tackle-harness] Rebuilding plugins...', 'cyan'));
+
+    const builder = createBuilder();
+    const result = builder.build();
+
+    if (result.success) {
+      if (flags.verbose) {
+        console.log(colorize('[tackle-harness] Updating settings.json...', 'dim'));
+      }
+      builder.updateSettings(targetRoot, packageRoot);
+      builder.injectClaudeMdRules(targetRoot);
+      _cleanStaleOutput(builder);
+    }
+
+    const coloredSummary = result.summary
+      .replace(/Build SUCCEEDED/g, colorize('Build SUCCEEDED', 'green'))
+      .replace(/Build COMPLETED WITH ERRORS/g, colorize('Build COMPLETED WITH ERRORS', 'yellow'))
+      .replace(/Validation PASSED/g, colorize('Validation PASSED', 'green'))
+      .replace(/Validation FAILED/g, colorize('Validation FAILED', 'red'));
+
+    console.log(coloredSummary);
+
+    if (result.success) {
+      console.log(colorize('[tackle-harness] Done!', 'green'));
+    }
+  }
+
+  function prompt() {
+    rl.question(colorize('选择操作 (Enter choice): ', 'cyan'), function (answer) {
+      const cmd = answer.trim().toLowerCase();
+
+      if (!cmd || cmd === 'q' || cmd === 'quit' || cmd === 'exit') {
+        console.log('');
+        console.log(colorize('Goodbye!', 'green'));
+        rl.close();
+        process.exit(0);
+      } else if (cmd === 'l' || cmd === 'list') {
+        listPlugins();
+        showMenu();
+        prompt();
+      } else if (cmd === 'r' || cmd === 'rebuild') {
+        rebuild();
+        showMenu();
+        prompt();
+      } else if (cmd === 't' || cmd === 'toggle') {
+        rl.question(colorize('输入插件名称 (Enter plugin name): ', 'yellow'), function (name) {
+          togglePlugin(name.trim());
+        });
+      } else if (cmd === 'v' || cmd === 'view') {
+        rl.question(colorize('输入插件名称 (Enter plugin name): ', 'yellow'), function (name) {
+          viewDetails(name.trim());
+          showMenu();
+          prompt();
+        });
+      } else {
+        console.log('');
+        console.log(colorize('Unknown command: ' + cmd, 'red'));
+        showMenu();
+        prompt();
+      }
+    });
+  }
+
+  showMenu();
+  prompt();
+}
+
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
@@ -651,6 +1003,10 @@ switch (command) {
     break;
   case 'list':
     cmdList();
+    break;
+  case 'interactive':
+  case 'i':
+    cmdInteractive();
     break;
   case 'version':
     cmdVersion();
