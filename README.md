@@ -3,7 +3,7 @@
 > 基于插件的 AI Agent 工作流框架，为 Claude Code 提供任务管理、工作流编排、角色管理等能力
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.0.15-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.16-blue.svg)](https://github.com/ph419/tackle)
 [![CI](https://github.com/ph419/tackle/actions/workflows/ci.yml/badge.svg)](https://github.com/ph419/tackle/actions/workflows/ci.yml)
 
 **[English](README.en.md)**

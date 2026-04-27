@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.16] - 2026-04-27
+
+### Fixed
+
+- CI Pipeline `Build plugins` 步骤改为 `npm run init`，解决 CI 环境配置文件缺失导致构建失败
+- `config-validator.js` 配置文件缺失时降级为 warning，不再阻断构建
+- `harness-build.js` 配置验证失败时继续使用默认值构建，而非硬错误中断
+
 ## [0.0.15] - 2026-04-27
 
 ### Added

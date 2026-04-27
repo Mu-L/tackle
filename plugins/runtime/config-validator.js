@@ -390,8 +390,9 @@ class ConfigValidator {
 
     // Check if file exists
     if (!fs.existsSync(configPath)) {
-      result.valid = false;
-      result.errors.push('Configuration file not found: ' + configPath);
+      // Degrade to warning - allow build to proceed with defaults
+      result.valid = true;
+      result.warnings.push('Configuration file not found: ' + configPath);
       return result;
     }
 

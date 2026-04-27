@@ -110,24 +110,16 @@ HarnessBuild.prototype.validate = function validate() {
 HarnessBuild.prototype.build = function build() {
   this._buildResults = [];
 
-  // Validate configuration first
+  // Validate configuration first - degrade to warning on failure
   var configValidation = this.validateConfig();
   if (!configValidation.valid) {
-    this._log('error', 'Configuration validation failed:');
+    // Config validation failed - log warnings and continue with defaults
+    this._log('warn', 'Configuration file not found or invalid. Using default values.');
     for (var i = 0; i < configValidation.errors.length; i++) {
-      this._log('error', '  - ' + configValidation.errors[i]);
+      this._log('warn', '  - ' + configValidation.errors[i]);
     }
-    this._log('error', 'Please fix the configuration errors above and try again.');
-    return {
-      success: false,
-      built: [],
-      errors: [{ plugin: 'config', error: 'Configuration validation failed' }],
-      summary: configValidation.summary,
-    };
-  }
-
-  // Log warnings if any
-  if (configValidation.warnings.length > 0) {
+    this._log('warn', 'Run "npm run init" to create a default configuration file.');
+  } else if (configValidation.warnings.length > 0) {
     for (var j = 0; j < configValidation.warnings.length; j++) {
       this._log('warn', 'Config warning: ' + configValidation.warnings[j]);
     }

@@ -3,7 +3,7 @@
 > A plugin-based AI Agent workflow framework that provides task management, workflow orchestration, and role management for Claude Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.0.15-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.0.16-blue.svg)](https://github.com/ph419/tackle)
 [![CI](https://github.com/ph419/tackle/actions/workflows/ci.yml/badge.svg)](https://github.com/ph419/tackle/actions/workflows/ci.yml)
 
 **[中文文档](README.md)**
