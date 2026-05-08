@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.20] - 2026-05-08
+
+### Added
+
+- **ManifestResolver** (`plugins/runtime/manifest-resolver.js`): 项目级插件选择系统，通过 `.claude/harness-manifest.json` 覆盖全局 `plugin-registry.json` 的启用状态。仅记录差异项，新插件自动生效
+- `init` 命令自动创建 `harness-manifest.json`，打印插件启用统计
+- Interactive 模式 (`tackle-harness i`) 改为写入项目 manifest 而非全局 registry
+- 全局安装单元测试套件 (`test/test-global-install.js`)，覆盖路径解析、manifest 合并/降级、跨平台兼容性等 10 组测试
+
+### Changed
+
+- **全局安装支持**：`harness-build.js` 区分 `packageRoot`（tackle-harness 所在目录）和 `targetRoot`（用户项目目录），全局安装时生成绝对路径的 hook 命令，本地安装时使用相对路径
+- `hook-skill-gate` 和 `hook-session-start` 新增 `resolvePackageRoot()` 函数，从 hook 所在位置向上查找 tackle-harness 包根目录，确保全局安装时正确读取 `plugin-registry.json`
+- `discoverGatedSkills()` 路径修复：拼接 `plugins/core/{source}/plugin.json`，补回缺失的 `core/` 段
+- Hook 命令路径统一使用正斜杠，确保 Windows 跨平台兼容
+
+### Verified
+
+- 188 个测试全部通过（含 10 组新增全局安装测试）
+- `validate` 和 `build` 命令在全局链接模式下正常工作
+
 ## [0.0.19] - 2026-05-02
 
 ### Changed
@@ -176,6 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.0.20]: https://github.com/ph419/tackle/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/ph419/tackle/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/ph419/tackle/compare/v0.0.17...v0.0.18
 [0.0.17]: https://github.com/ph419/tackle/compare/v0.0.16...v0.0.17

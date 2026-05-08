@@ -34,7 +34,9 @@ var VALID_PLUGIN_TYPES = ['skill', 'hook', 'validator', 'provider'];
 
 /**
  * @param {object} [options]
- * @param {string} [options.rootDir]        - project root directory
+ * @param {string} [options.rootDir]        - project root directory (deprecated, use targetRoot)
+ * @param {string} [options.targetRoot]     - target project root directory
+ * @param {string} [options.packageRoot]    - tackle-harness package root directory
  * @param {string} [options.registryPath]   - override path to plugin-registry.json
  * @param {string} [options.pluginsDir]     - override path to plugins/core/
  * @param {string} [options.outputSkillsDir] - override output .claude/skills/
@@ -44,12 +46,17 @@ var VALID_PLUGIN_TYPES = ['skill', 'hook', 'validator', 'provider'];
 function HarnessBuild(options) {
   options = options || {};
 
-  this._rootDir = options.rootDir || process.cwd();
-  this._registryPath = options.registryPath || path.join(this._rootDir, 'plugins', 'plugin-registry.json');
-  this._pluginsDir = options.pluginsDir || path.join(this._rootDir, 'plugins', 'core');
-  this._outputSkillsDir = options.outputSkillsDir || path.join(this._rootDir, '.claude', 'skills');
-  this._outputHooksDir = options.outputHooksDir || path.join(this._rootDir, '.claude', 'hooks');
+  // Support both old rootDir and new targetRoot naming
+  this._targetRoot = options.targetRoot || options.rootDir || process.cwd();
+  this._packageRoot = options.packageRoot || this._targetRoot;
+  this._registryPath = options.registryPath || path.join(this._packageRoot, 'plugins', 'plugin-registry.json');
+  this._pluginsDir = options.pluginsDir || path.join(this._packageRoot, 'plugins', 'core');
+  this._outputSkillsDir = options.outputSkillsDir || path.join(this._targetRoot, '.claude', 'skills');
+  this._outputHooksDir = options.outputHooksDir || path.join(this._targetRoot, '.claude', 'hooks');
   this._verbose = options.verbose || false;
+
+  // Legacy alias for backward compatibility
+  this._rootDir = this._targetRoot;
 
   /** @type {object[]} validation errors collected during --validate */
   this._validationErrors = [];
@@ -200,12 +207,13 @@ HarnessBuild.prototype.validateConfig = function validateConfig() {
 
 /**
  * Read and parse the plugin registry.
+ * Uses manifest-resolver to merge global registry with project manifest.
  * @returns {object}
  */
 HarnessBuild.prototype._readRegistry = function _readRegistry() {
   try {
-    var content = fs.readFileSync(this._registryPath, 'utf-8');
-    return JSON.parse(content);
+    var ManifestResolver = require('./manifest-resolver');
+    return ManifestResolver.resolveEffectivePlugins(this._packageRoot, this._targetRoot);
   } catch (err) {
     this._log('warn', 'Could not read registry: ' + err.message + '. Using empty registry.');
     return { version: '1.0.0', plugins: [] };
@@ -1240,6 +1248,31 @@ HarnessBuild.run = function run(argv) {
 };
 
 // ---------------------------------------------------------------------------
+// Path resolution utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect whether this is a local or global installation.
+ * Checks if packageRoot is an ancestor of targetRoot.
+ *
+ * @param {string} packageRoot - this package's root directory (node_modules/tackle-harness/)
+ * @param {string} targetRoot - target project root directory
+ * @returns {boolean} true if local install, false if global install
+ */
+HarnessBuild.prototype._isLocalInstall = function _isLocalInstall(packageRoot, targetRoot) {
+  var path = require('path');
+
+  // Normalize paths for comparison
+  var normalizedPackage = path.resolve(packageRoot).replace(/\\/g, '/');
+  var normalizedTarget = path.resolve(targetRoot).replace(/\\/g, '/');
+
+  // Check if packageRoot is an ancestor of targetRoot
+  var relative = path.relative(normalizedPackage, normalizedTarget);
+  // If relative path doesn't start with '..', packageRoot is an ancestor
+  return relative.indexOf('..') !== 0;
+};
+
+// ---------------------------------------------------------------------------
 // Settings merge
 // ---------------------------------------------------------------------------
 
@@ -1247,6 +1280,8 @@ HarnessBuild.run = function run(argv) {
  * Merge tackle-harness hooks into the target project's .claude/settings.json.
  * Reads existing settings, adds tackle-harness-specific hooks, and writes back.
  * Idempotent: skips hooks that are already registered.
+ *
+ * Uses absolute paths for global installs, relative paths for local installs.
  *
  * @param {string} targetRoot  - target project root directory
  * @param {string} packageRoot - this package's root directory (node_modules/tackle-harness/)
@@ -1256,6 +1291,9 @@ HarnessBuild.prototype.updateSettings = function updateSettings(targetRoot, pack
   var path = require('path');
   var settingsPath = path.join(targetRoot, '.claude', 'settings.json');
   var settings = {};
+
+  // Detect installation mode
+  var isLocalInstall = this._isLocalInstall(packageRoot, targetRoot);
 
   // Read existing settings if present
   if (fs.existsSync(settingsPath)) {
@@ -1272,11 +1310,17 @@ HarnessBuild.prototype.updateSettings = function updateSettings(targetRoot, pack
   if (!settings.hooks.PreToolUse) settings.hooks.PreToolUse = [];
   if (!settings.hooks.PostToolUse) settings.hooks.PostToolUse = [];
 
-  // Resolve hook script path relative to target project
+  // Resolve hook script paths based on installation mode
   var hookScriptPath = path.join(packageRoot, 'plugins', 'core', 'hook-skill-gate', 'index.js');
-  // Use forward slashes for cross-platform compatibility
-  var hookScriptRelative = path.relative(targetRoot, hookScriptPath).replace(/\\/g, '/');
-  var hookCmd = 'node "' + hookScriptRelative + '"';
+  var hookCmd;
+  if (isLocalInstall) {
+    // Local install: use relative path
+    var hookScriptRelative = path.relative(targetRoot, hookScriptPath).replace(/\\/g, '/');
+    hookCmd = 'node "' + hookScriptRelative + '"';
+  } else {
+    // Global install: use absolute path with forward slashes
+    hookCmd = 'node "' + hookScriptPath.replace(/\\/g, '/') + '"';
+  }
 
   // Update or add PreToolUse hook for Edit|Write
   var preMatcher = 'Edit|Write';
@@ -1288,8 +1332,13 @@ HarnessBuild.prototype.updateSettings = function updateSettings(targetRoot, pack
 
   // Update or add SessionStart hook for plan-mode rule injection
   var sessionHookScriptPath = path.join(packageRoot, 'plugins', 'core', 'hook-session-start', 'index.js');
-  var sessionHookRelative = path.relative(targetRoot, sessionHookScriptPath).replace(/\\/g, '/');
-  var sessionHookCmd = 'node "' + sessionHookRelative + '"';
+  var sessionHookCmd;
+  if (isLocalInstall) {
+    var sessionHookRelative = path.relative(targetRoot, sessionHookScriptPath).replace(/\\/g, '/');
+    sessionHookCmd = 'node "' + sessionHookRelative + '"';
+  } else {
+    sessionHookCmd = 'node "' + sessionHookScriptPath.replace(/\\/g, '/') + '"';
+  }
   var sessionMatcher = 'startup|clear|compact';
   _upsertHookEntry(settings.hooks.SessionStart, sessionMatcher, sessionHookCmd);
 

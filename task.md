@@ -2,8 +2,8 @@
 
 ## 📊 快速概览
 
-- **进度**: 21/21 (100.0%) ✅
-- **最近更新**: 2026-05-02
+- **进度**: 23/24 (95.8%) 🔄
+- **最近更新**: 2026-05-08
 - **当前版本**: 0.0.19
 - **规划文档**: [综合发展规划](docs/consolidated-development-plan.md)
 
@@ -11,6 +11,8 @@
 
 | 日期 | 活动描述 |
 |------|----------|
+| 2026-05-08 | WP-043 创建：全局安装改造方案（fine-grained 拆分，5 个子工作包） |
+| 2026-05-08 | WP-044 创建：校验 WP-043 成果并修复测试问题（standard 拆分，3 个子工作包） |
 | 2026-05-02 | WP-042 完成：全项目综合验证，6/6 验收标准通过（21 plugins validate、24 files build、registry 一致、settings.json hooks 完整、输出完整、npm pack 无敏感文件） |
 | 2026-05-02 | WP-041 完成：构建 output 验证，13/13 front-matter 完整、triggers 一致、config 块正确注入、companion 文件完整 |
 | 2026-05-02 | WP-040 完成：统一 skill.md 元数据源，更新 10 个 plugin.json description 为英文格式，移除 10 个源 skill.md front-matter |
@@ -48,6 +50,8 @@
 | WP-040 | 统一 skill.md 元数据源 — 移除 front-matter | P1 | 3 | 10min | 无 | ✅ 完成 |
 | WP-041 | 构建 output 验证 — triggers 注入完整性 | P1 | 4 | 10min | WP-040 | ✅ 完成 |
 | WP-042 | 全项目综合验证 | P1 | 6 | 15min | WP-041 | ✅ 完成 |
+| WP-043 | 全局安装改造 | P0 | 5 | 60min | 无 | 📋 待执行 |
+| WP-044 | 校验 WP-043 成果并修复测试问题 | P0 | 3 | 30min | WP-043 | ✅ 完成 |
 
 ## 依赖图
 

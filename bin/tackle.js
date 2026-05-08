@@ -332,7 +332,35 @@ function cmdInit() {
     console.log('[tackle-harness] harness-config.yaml already exists, skipping');
   }
 
-  // 4. Run build
+  // 4. Create harness-manifest.json if not exists
+  var manifestPath = path.join(claudeDir, 'harness-manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    try {
+      var ManifestResolver = require('../plugins/runtime/manifest-resolver');
+      var defaultManifest = ManifestResolver.createDefaultManifest(packageRoot);
+      var manifestContent = JSON.stringify(defaultManifest, null, 2);
+      fs.writeFileSync(manifestPath, manifestContent + '\n', 'utf-8');
+      console.log('[tackle-harness] Created harness-manifest.json');
+
+      // Print plugin activation summary
+      var plugins = defaultManifest.plugins || {};
+      var pluginNames = Object.keys(plugins);
+      var enabledCount = 0;
+      for (var i = 0; i < pluginNames.length; i++) {
+        if (plugins[pluginNames[i]].enabled !== false) {
+          enabledCount++;
+        }
+      }
+      console.log('[tackle-harness] Plugin activation: ' + enabledCount + ' enabled, ' + (pluginNames.length - enabledCount) + ' disabled');
+    } catch (err) {
+      console.error('[tackle-harness] Warning: Failed to create harness-manifest.json');
+      console.error('[tackle-harness] Error: ' + err.message);
+    }
+  } else {
+    console.log('[tackle-harness] harness-manifest.json already exists, skipping');
+  }
+
+  // 5. Run build
   cmdBuild();
 }
 
@@ -813,14 +841,24 @@ function cmdInteractive() {
     }
 
     const newEnabled = plugin.enabled === false;
-    plugin.enabled = newEnabled;
-
-    registry.plugins = plugins;
 
     try {
-      fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf-8');
+      // Use manifest-resolver to update project manifest
+      const ManifestResolver = require('../plugins/runtime/manifest-resolver');
+      const success = ManifestResolver.updatePluginInManifest(packageRoot, targetRoot, plugin.name, newEnabled);
+
+      if (!success) {
+        console.log('');
+        console.error(colorize('Error: Failed to update plugin manifest', 'red'));
+        return;
+      }
+
+      // Update in-memory registry for display
+      plugin.enabled = newEnabled;
+
       console.log('');
       console.log(colorize('Plugin "' + plugin.name + '" is now ' + (newEnabled ? 'enabled' : 'disabled'), 'green'));
+      console.log(colorize('(Updated project manifest: .claude/harness-manifest.json)', 'dim'));
 
       rl.question(colorize('是否重新构建? (y/N): ', 'yellow'), function (answer) {
         if (answer && answer.toLowerCase() === 'y') {
@@ -851,7 +889,7 @@ function cmdInteractive() {
       });
     } catch (e) {
       console.log('');
-      console.error(colorize('Error: Failed to update registry: ' + e.message, 'red'));
+      console.error(colorize('Error: Failed to update manifest: ' + e.message, 'red'));
     }
   }
 

@@ -20,6 +20,31 @@ var fs = require('fs');
 var path = require('path');
 
 /**
+ * Resolve the package root directory from __dirname.
+ * Walks up from the hook's location to find the tackle-harness package root.
+ * Used to locate plugin-registry.json regardless of installation mode.
+ *
+ * @returns {string}
+ */
+function resolvePackageRoot() {
+  // This hook is at: plugins/core/hook-session-start/index.js
+  // Package root is three levels up from __dirname
+  var dir = path.resolve(__dirname, '../../..');
+
+  // Verify we're at the right location (should contain plugins/ directory)
+  for (var i = 0; i < 5; i++) {
+    if (fs.existsSync(path.join(dir, 'plugins'))) return dir;
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    var parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  // Fallback to computed path
+  return path.resolve(__dirname, '../../..');
+}
+
+/**
  * Walk up from a directory to find the project root (contains .claude/ or plugins/).
  * @param {string} [startDir]
  * @returns {string}
@@ -38,11 +63,11 @@ function resolveProjectRoot(startDir) {
 
 /**
  * Read plugin-registry.json and find skills with plan_mode_required.
- * @param {string} projectRoot
+ * @param {string} packageRoot - the tackle-harness package root directory
  * @returns {string[]} skill names
  */
-function findPlanModeSkills(projectRoot) {
-  var registryPath = path.join(projectRoot, 'plugins', 'plugin-registry.json');
+function findPlanModeSkills(packageRoot) {
+  var registryPath = path.join(packageRoot, 'plugins', 'plugin-registry.json');
   var planModeSkills = [];
 
   try {
@@ -54,7 +79,7 @@ function findPlanModeSkills(projectRoot) {
       var entry = plugins[i];
       if (!entry.source) continue;
 
-      var pluginDir = path.join(projectRoot, 'plugins', 'core', entry.source);
+      var pluginDir = path.join(packageRoot, 'plugins', 'core', entry.source);
       var pluginJsonPath = path.join(pluginDir, 'plugin.json');
 
       try {
@@ -95,11 +120,11 @@ function findPlanModeSkills(projectRoot) {
 
 /**
  * Build the additionalContext string for SessionStart hook output.
- * @param {string} projectRoot
+ * @param {string} packageRoot - the tackle-harness package root directory
  * @returns {string}
  */
-function buildContext(projectRoot) {
-  var planModeSkills = findPlanModeSkills(projectRoot);
+function buildContext(packageRoot) {
+  var planModeSkills = findPlanModeSkills(packageRoot);
 
   if (planModeSkills.length === 0) return '';
 
@@ -136,8 +161,8 @@ function escapeForJson(s) {
 (function main() {
   // Only run main if executed directly (not required as a module)
   if (require.main === module) {
-    var root = resolveProjectRoot();
-    var context = buildContext(root);
+    var packageRoot = resolvePackageRoot();
+    var context = buildContext(packageRoot);
 
     if (!context) {
       // No plan-mode skills found, output empty context

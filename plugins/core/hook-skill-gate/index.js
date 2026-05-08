@@ -34,6 +34,31 @@ var DEFAULT_CONFIG = {
 };
 
 /**
+ * Resolve the package root directory from __dirname.
+ * Walks up from the hook's location to find the tackle-harness package root.
+ * Used to locate plugin-registry.json regardless of installation mode.
+ *
+ * @returns {string}
+ */
+function resolvePackageRoot() {
+  // This hook is at: plugins/core/hook-skill-gate/index.js
+  // Package root is three levels up from __dirname
+  var dir = path.resolve(__dirname, '../../..');
+
+  // Verify we're at the right location (should contain plugins/ directory)
+  for (var i = 0; i < 5; i++) {
+    if (fs.existsSync(path.join(dir, 'plugins'))) return dir;
+    if (fs.existsSync(path.join(dir, 'package.json'))) return dir;
+    var parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+
+  // Fallback to computed path
+  return path.resolve(__dirname, '../../..');
+}
+
+/**
  * Resolve the project root directory.
  * Walks up from a starting directory to find task.md or .claude/.
  *
@@ -59,12 +84,14 @@ function resolveProjectRoot(startDir) {
  *   - Its plugin.json has metadata.gatedByCode === true, OR
  *   - It appears in the hook-skill-gate config.gatedSkills list
  *
- * @param {string} projectRoot
+ * Uses packageRoot to locate registry and plugin directories.
+ *
+ * @param {string} packageRoot - the tackle-harness package root directory
  * @param {object} hookConfig - the hook-skill-gate config section
  * @returns {string[]} array of gated skill names
  */
-function discoverGatedSkills(projectRoot, hookConfig) {
-  var registryPath = path.join(projectRoot, 'plugins', 'plugin-registry.json');
+function discoverGatedSkills(packageRoot, hookConfig) {
+  var registryPath = path.join(packageRoot, 'plugins', 'plugin-registry.json');
   var gatedFromMetadata = [];
   var gatedFromConfig = (hookConfig && hookConfig.gatedSkills) || [];
 
@@ -79,9 +106,11 @@ function discoverGatedSkills(projectRoot, hookConfig) {
       if (!entry.source) continue;
 
       // Attempt to read the plugin's plugin.json for metadata
+      // Path: plugins/core/{source}/plugin.json
       var pluginJsonPath = path.join(
-        projectRoot,
+        packageRoot,
         'plugins',
+        'core',
         entry.source,
         'plugin.json'
       );
@@ -141,6 +170,8 @@ class SkillGateHook extends HookPlugin {
     this._config = Object.assign({}, DEFAULT_CONFIG);
     /** @type {string} */
     this._projectRoot = '';
+    /** @type {string} */
+    this._packageRoot = '';
     /** @type {string[]|null} cached gated skills */
     this._gatedSkillsCache = null;
   }
@@ -153,6 +184,7 @@ class SkillGateHook extends HookPlugin {
    */
   async onActivate(context) {
     this._projectRoot = resolveProjectRoot();
+    this._packageRoot = resolvePackageRoot();
     var stateFilePath = path.join(this._projectRoot, '.claude-state');
     this._store = new StateStore({ filePath: stateFilePath });
 
@@ -171,7 +203,7 @@ class SkillGateHook extends HookPlugin {
     }
 
     // Initial discovery of gated skills
-    this._gatedSkillsCache = discoverGatedSkills(this._projectRoot, this._config);
+    this._gatedSkillsCache = discoverGatedSkills(this._packageRoot, this._config);
   }
 
   /**
@@ -307,7 +339,7 @@ class SkillGateHook extends HookPlugin {
    */
   _getGatedSkills() {
     this._gatedSkillsCache = discoverGatedSkills(
-      this._projectRoot,
+      this._packageRoot,
       this._config
     );
     return this._gatedSkillsCache;
