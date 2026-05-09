@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.23] - 2026-05-09
+
+### Changed
+
+- 全局安装文档全面更新：README、installation.md、best-practices.md、daily-workflow-guide.md、config-reference.md 重写为全局安装优先的架构说明（WP-048~051）
+
+### Fixed
+
+- CLI 全局 skill 目录名去除 `skill-` 前缀，修复 Claude Code 中 slash command 显示为 `/skill-tackle-init` 而非 `/tackle-init` 的问题
+
+## [0.0.21] - 2026-05-09
+
+### Added
+
+- `skill-tackle-init` 全局初始化技能：通过 `tackle-harness setup-global` 或 npm postinstall 安装到 `~/.claude/skills/`，用户可在任意项目目录触发"初始化 tackle"
+
 ## [0.0.20] - 2026-05-08
 
 ### Added
@@ -45,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `harness-build.js` 构建时自动复制 skill 插件的伴生参考文件（`*-reference.md`）到输出目录，并替换 skill.md 中的源码相对路径为输出路径。修复在其他项目目录使用 `skill-agent-dispatcher` 时 `roles-reference.md` 和 `cleanup-reference.md` 找不到的问题
+
+## [0.0.17] - 2026-04-27
+
+### Fixed
+
+- `harness-build.js` 构建时自动复制 skill 插件的伴生参考文件（如 `roles-reference.md`、`cleanup-reference.md`）到输出目录，并重写 skill.md 中的路径（`plugins/core/{name}/` → `.claude/skills/{name}/`），修复全局安装后参考文件找不到的问题
 
 ## [0.0.16] - 2026-04-27
 
@@ -197,6 +219,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.0.23]: https://github.com/ph419/tackle/compare/v0.0.21...v0.0.23
+[0.0.21]: https://github.com/ph419/tackle/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/ph419/tackle/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/ph419/tackle/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/ph419/tackle/compare/v0.0.17...v0.0.18
