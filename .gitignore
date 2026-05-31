@@ -6,6 +6,7 @@ CLAUDE.md
 
 # Docs
 docs/*
+!docs/design/
 task.md
 
 # Node
