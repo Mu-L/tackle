@@ -2,7 +2,7 @@
 
 ## 📊 快速概览
 
-- **进度**: 27/27 (100%) | v0.2.0 路线图完成 ✅ | WP-134~145 全量检查 PASS ✅ | WP-146~150 完成 ✅ | WP-151 全量审计完成 ✅ | WP-152~158 审计修复全部完成 ✅
+- **进度**: 27/27 (100%) | v0.2.0 路线图完成 ✅ | WP-134~145 全量检查 PASS ✅ | WP-146~150 完成 ✅ | WP-151 全量审计完成 ✅ | WP-152~158 审计修复全部完成 ✅ | WP-161 CI 修复完成 ✅
 - **最近更新**: 2026-05-31
 - **规划文档**: [综合发展规划](docs/consolidated-development-plan.md) | [Final Design](docs/design/harness-universal-platform-final-design.md)
 - **预算**: 850min（v0.2.0，含完整 Worker Threads 沙箱）
@@ -21,6 +21,9 @@
 
 | 日期 | 活动描述 |
 |------|----------|
+| 2026-05-31 | WP-161 完成：修复 macOS/Ubuntu CI 测试失败（resolve-plugin-path.js 添加 isAbsolutePath() 跨平台辅助函数替换 2 处 path.isAbsolute 调用 + test-global-install.js line 484 断言加 process.platform === 'win32' 条件，全量 765 测试通过 0 失败） |
+| 2026-05-31 | WP-162 创建：修复 Claude Code 启动 SessionStart Hook 报错（P0 simple，全局 settings.json hooks 指向已失效临时目录 `C:/Users/MECHREVO/AppData/Local/Temp/claude/tmp.1RanK2fxlz/...` 导致 MODULE_NOT_FOUND，修复方案：重新运行 `node bin/tackle.js setup-global` 更新 hooks 路径为 `D:/tackle/plugins/core/...`，预估 3min） |
+| 2026-05-31 | WP-161 创建：修复 macOS/Ubuntu CI 测试失败（P0 simple，3 个测试失败：resolve-plugin-path.js path.isAbsolute 平台特定性导致 Windows 路径在 POSIX 被错误拼接 + test-global-install.js 无条件断言 Windows 路径绝对性，修复方案：添加跨平台 isAbsolutePath() 辅助函数 + 平台条件断言，预估 5min） |
 | 2026-05-31 | WP-156 完成：harness-build.js 拆分（CLI 入口代码提取为 plugins/runtime/build-cli.js 89 行，harness-build.js 从 1063 行降至 999 行，Usage 输出保持原样，require 关系正确：build-cli require harness-build，所有调用方 bin/context.js + commands/setup-global.js + 测试文件均通过 harness-build require 构造函数无需改动，build + validate + 全量测试 0 失败 + smoke test 通过） |
 | 2026-05-31 | WP-154 完成：Runtime 日志统一（validator-pipeline.js 移除 _log console fallback 3 处、state-store.js 引入 Logger 统一 2 处、event-bus.js 引入 Logger 统一 1 处、audit-logger.js 引入 Logger 统一 1 处、hook-dispatcher.js 移除 _log console fallback 1 处、sandbox-manager.js 移除 _log console fallback 1 处、plugin-loader.js 移除 _log console fallback 1 处、harness-build.js _log 优先使用 logger 并保留 console fallback + 构造函数新增 logger 选项，保留 logger.js 自身 console 调用和 CLI Usage 输出不变，全量测试通过 0 失败，build 正常） |
 | 2026-05-31 | WP-153 完成：文档与元数据同步（CLAUDE.md CLI 架构描述更新为 bin/tackle.js + bin/context.js + commands/ 模块化架构，Code Conventions 添加 runtime var 兼容性说明，skill-role-manager dependencies 从 provider-role-registry 统一为 provider:role-registry 格式，provider-watchdog + skill-watchdog-manager 版本号 0.1.0 → 1.0.0，.npmignore 扩展完善，全量 750 测试通过 0 失败） |

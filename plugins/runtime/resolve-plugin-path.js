@@ -21,6 +21,25 @@ var path = require('path');
 var VALID_SOURCE_TYPES = ['core', 'npm', 'local'];
 
 /**
+ * Cross-platform absolute path check.
+ *
+ * Node's path.isAbsolute() is platform-specific: on POSIX it only
+ * recognizes /-prefixed paths; on Windows it only recognizes drive-letter
+ * and UNC paths. A plugin registry may contain Windows-style paths on a
+ * POSIX host (or vice versa), so we check both conventions.
+ *
+ * @internal
+ * @param {string} p - path to test
+ * @returns {boolean} true if p is absolute on either Windows or POSIX
+ */
+function isAbsolutePath(p) {
+  if (path.isAbsolute(p)) return true;
+  // Windows drive-letter absolute path: C:\  D:/  etc.
+  if (/^[A-Za-z]:[\\\/]/.test(p)) return true;
+  return false;
+}
+
+/**
  * Resolve the filesystem directory for a plugin entry.
  *
  * Resolution strategy by sourceType:
@@ -68,7 +87,7 @@ function resolvePluginPath(entry, defaultPluginsDir, registryDir) {
 
   // local source: absolute or relative path
   if (sourceType === 'local') {
-    if (path.isAbsolute(source)) {
+    if (isAbsolutePath(source)) {
       return source;
     }
     return path.resolve(registryDir, source);
@@ -76,7 +95,7 @@ function resolvePluginPath(entry, defaultPluginsDir, registryDir) {
 
   // core (default): existing behavior
   // Absolute path → use directly
-  if (path.isAbsolute(source)) {
+  if (isAbsolutePath(source)) {
     return source;
   }
 

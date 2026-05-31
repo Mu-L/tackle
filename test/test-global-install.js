@@ -481,7 +481,10 @@ test('cross-platform: path module operations work consistently', () => {
   const testPath2 = '/home/user/project/file.txt';
 
   // path.isAbsolute should work correctly
-  assert.strictEqual(path.isAbsolute(testPath1), true, 'Windows path should be absolute');
+  // On POSIX, path.isAbsolute('C:\...') returns false; only assert on Windows
+  if (process.platform === 'win32') {
+    assert.strictEqual(path.isAbsolute(testPath1), true, 'Windows path should be absolute on Windows');
+  }
   assert.strictEqual(path.isAbsolute(testPath2), true, 'Unix path should be absolute');
 
   // path.join should produce correct results

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2026-05-31
+
+### Fixed
+
+- **跨平台绝对路径检查**：`resolve-plugin-path.js` 新增 `isAbsolutePath()` 辅助函数，兼容 POSIX/Windows 双平台路径识别，修复 macOS/Ubuntu CI 上 3 个测试因 `path.isAbsolute()` 平台特定行为导致失败的问题（WP-161）
+- **测试平台条件断言**：`test-global-install.js` 添加 `process.platform === 'win32'` 条件保护，消除 POSIX 环境下 Windows 路径断言失败
+
 ## [0.2.2] - 2026-05-31
 
 ### Fixed
