@@ -67,11 +67,15 @@ if teamee_map is not empty:
     # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
     # 输出: "⚠️ 发现 {len(teamee_map)} 个未销毁的 Teamee，发送 shutdown_request"
     for task_id, teamee_name in teamee_map.items():
-        SendMessage(to=teamee_name, message={
-            "type": "shutdown_request",
-            "reason": "最终清理阶段，准备 TeamDelete",
-            "request_id": f"final-shutdown-{task_id}-{timestamp()}"
-        })
+        SendMessage(
+            to=teamee_name,
+            summary="Shutdown teamee: final cleanup",
+            message={
+                "type": "shutdown_request",
+                "reason": "最终清理阶段，准备 TeamDelete",
+                "request_id": f"final-shutdown-{task_id}-{timestamp()}"
+            }
+        )
 else:
     # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
     # 输出: "所有 Teamee 已在监控循环中即时销毁，无需额外 shutdown"
@@ -81,11 +85,15 @@ else:
 config = Read("~/.claude/teams/$team_name/config.json")
 for member in config.members:
     if member.name != "team-lead" and member.name not in teamee_map.values():
-        SendMessage(to=member.name, message={
-            "type": "shutdown_request",
-            "reason": "最终清理阶段，发现未在映射表中的成员",
-            "request_id": f"orphan-shutdown-{member.name}-{timestamp()}"
-        })
+        SendMessage(
+            to=member.name,
+            summary="Shutdown orphan: final cleanup",
+            message={
+                "type": "shutdown_request",
+                "reason": "最终清理阶段，发现未在映射表中的成员",
+                "request_id": f"orphan-shutdown-{member.name}-{timestamp()}"
+            }
+        )
 ```
 
 ---

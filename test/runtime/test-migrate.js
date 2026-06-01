@@ -16,6 +16,7 @@ var fs = require('fs');
 var os = require('os');
 
 var migrate = require('../../commands/migrate');
+var init = require('../../commands/init');
 var pv = require('../../plugins/runtime/plugin-validator');
 
 // ---------------------------------------------------------------------------
@@ -155,6 +156,33 @@ function createMockContext(project) {
     exit: function (code) { exitCode = code; },
     createBuilder: function () {
       return {
+        injectClaudeMdRules: function () {},
+      };
+    },
+  };
+  return { ctx: ctx, getExitCode: function () { return exitCode; } };
+}
+
+/**
+ * Create a mock context for the init command.
+ * Replaces ctx.exit() to capture exit code without killing the process.
+ */
+function createMockInitContext(project) {
+  var exitCode = null;
+  var ctx = {
+    packageRoot: project.packageRoot,
+    targetRoot: project.targetRoot,
+    settingsPath: project.settingsPath,
+    registryPath: project.registryPath,
+    configDir: path.join(project.targetRoot, '.claude', 'config'),
+    flags: { noColor: true, verbose: false },
+    command: 'init',
+    packageVersion: '0.2.0',
+    colorize: function (text) { return text; },
+    exit: function (code) { exitCode = code; },
+    createBuilder: function () {
+      return {
+        updateSettings: function () {},
         injectClaudeMdRules: function () {},
       };
     },
@@ -630,6 +658,244 @@ test.describe('WP-124-3: plugin.json schema backward compatibility', function ()
 
     var result = pv.validateWithSchema(plugin);
     assert.strictEqual(result.valid, true, 'config should accept additional properties');
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// WP-165: Hook whitelist filtering tests (migrate + init)
+// ---------------------------------------------------------------------------
+
+test.describe('WP-165: Hook whitelist filtering - migrate command', function () {
+
+  test('should remove all tackle-harness hooks when only those exist', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: ['hook-skill-gate', 'hook-session-start'],
+    });
+
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-skill-gate')),
+        false,
+        'hook-skill-gate should be removed'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-session-start')),
+        false,
+        'hook-session-start should be removed'
+      );
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should preserve all non-tackle-harness hooks', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: ['my-custom-hook', 'another-plugin-hook'],
+    });
+
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'my-custom-hook')),
+        true,
+        'my-custom-hook should be preserved'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'another-plugin-hook')),
+        true,
+        'another-plugin-hook should be preserved'
+      );
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should remove only tackle-harness hooks in mixed scenario', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: ['hook-skill-gate', 'my-custom-hook', 'hook-session-start', 'third-party-hook'],
+    });
+
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+
+      // Tackle hooks should be removed
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-skill-gate')),
+        false,
+        'hook-skill-gate should be removed'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-session-start')),
+        false,
+        'hook-session-start should be removed'
+      );
+      // Non-tackle hooks should be preserved
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'my-custom-hook')),
+        true,
+        'my-custom-hook should be preserved'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'third-party-hook')),
+        true,
+        'third-party-hook should be preserved'
+      );
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should handle empty hooks directory without error', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: [],
+    });
+
+    // Ensure empty hooks dir exists
+    fs.mkdirSync(project.hooksDir, { recursive: true });
+
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// WP-165: Hook whitelist filtering tests - init command
+// ---------------------------------------------------------------------------
+
+test.describe('WP-165: Hook whitelist filtering - init command', function () {
+
+  test('should remove all tackle-harness hooks when only those exist', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: ['hook-skill-gate', 'hook-session-start'],
+    });
+
+    try {
+      var mock = createMockInitContext(project);
+      init.execute(mock.ctx);
+
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-skill-gate')),
+        false,
+        'hook-skill-gate should be removed'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-session-start')),
+        false,
+        'hook-session-start should be removed'
+      );
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should preserve all non-tackle-harness hooks', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: ['my-custom-hook', 'another-plugin-hook'],
+    });
+
+    try {
+      var mock = createMockInitContext(project);
+      init.execute(mock.ctx);
+
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'my-custom-hook')),
+        true,
+        'my-custom-hook should be preserved'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'another-plugin-hook')),
+        true,
+        'another-plugin-hook should be preserved'
+      );
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should remove only tackle-harness hooks in mixed scenario', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: ['hook-skill-gate', 'my-custom-hook', 'hook-session-start', 'third-party-hook'],
+    });
+
+    try {
+      var mock = createMockInitContext(project);
+      init.execute(mock.ctx);
+
+      // Tackle hooks should be removed
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-skill-gate')),
+        false,
+        'hook-skill-gate should be removed'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'hook-session-start')),
+        false,
+        'hook-session-start should be removed'
+      );
+      // Non-tackle hooks should be preserved
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'my-custom-hook')),
+        true,
+        'my-custom-hook should be preserved'
+      );
+      assert.strictEqual(
+        fs.existsSync(path.join(project.hooksDir, 'third-party-hook')),
+        true,
+        'third-party-hook should be preserved'
+      );
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should handle empty hooks directory without error', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      projectHooks: [],
+    });
+
+    // Ensure empty hooks dir exists
+    fs.mkdirSync(project.hooksDir, { recursive: true });
+
+    try {
+      var mock = createMockInitContext(project);
+      init.execute(mock.ctx);
+      // No assertion on exit code since init command does not call ctx.exit
+    } finally {
+      project.cleanup();
+    }
   });
 
 });

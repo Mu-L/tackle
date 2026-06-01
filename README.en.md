@@ -3,7 +3,7 @@
 > A plugin-based AI Agent workflow framework that provides task management, workflow orchestration, and role management for Claude Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.2.4-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.2.5-blue.svg)](https://github.com/ph419/tackle)
 
 **[中文文档](https://github.com/ph419/tackle/blob/main/README.md)**
 
@@ -173,7 +173,7 @@ your-project/
     settings.json                    # Auto-registered hooks
 ```
 
-Skills and hooks are managed by the global install — no local `skills/` or `hooks/` directories needed.
+Skills and hooks are loaded directly from the global npm installation — no `.claude/skills/` or `.claude/hooks/` directories are generated in your project.
 
 ### Local Install Mode (Alternative)
 

@@ -158,6 +158,7 @@ module.exports = {
     var projectHooksDir = path.join(ctx.targetRoot, '.claude', 'hooks');
     if (fs.existsSync(projectHooksDir)) {
       try {
+        var tackleHooks = ['hook-skill-gate', 'hook-session-start'];
         var hookEntries = fs.readdirSync(projectHooksDir);
         var removedHooks = [];
 
@@ -165,7 +166,7 @@ module.exports = {
           var hookName = hookEntries[o];
           var hookPath = path.join(projectHooksDir, hookName);
 
-          if (fs.statSync(hookPath).isDirectory()) {
+          if (fs.statSync(hookPath).isDirectory() && tackleHooks.indexOf(hookName) !== -1) {
             fs.rmSync(hookPath, { recursive: true, force: true });
             removedHooks.push(hookName);
           }

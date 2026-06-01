@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-06-01
+
+### Fixed
+
+- **skill-tackle-sync 无差别删除项目级 Hooks 修复**（WP-165）：`migrate.js` 和 `init.js` 的 hook 清理逻辑添加 `tackleHooks` 白名单过滤 `['hook-skill-gate', 'hook-session-start']`，防止误删非 tackle-harness 的项目级 hooks，新增 8 个测试覆盖 migrate+init 各 4 场景
+- **skill-agent-dispatcher SendMessage 所有调用添加 summary**（WP-166）：skill.md SendMessage 规范更新为「所有调用都需要 summary」，5 处 shutdown_request + cleanup-reference.md 2 处 + roles-reference.md 1 处共 8 处 SendMessage 调用补充 summary 参数，监控循环注释同步更新
+
 ## [0.2.4] - 2026-06-01
 
 ### Fixed
@@ -331,6 +338,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.2.5]: https://github.com/ph419/tackle/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ph419/tackle/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ph419/tackle/compare/v0.2.2...v0.2.3
 [0.2.1]: https://github.com/ph419/tackle/compare/v0.2.0...v0.2.1

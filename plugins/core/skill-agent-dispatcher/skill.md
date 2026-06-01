@@ -63,16 +63,20 @@
 
 **所有 SendMessage 调用必须遵循以下规则：**
 
-1. **优先使用 object 类型的 message**（结构化 JSON）：
+1. **所有 SendMessage 调用都必须提供 summary 参数**（5-10 词预览文本）：
    ```
-   SendMessage(to=target, message={
-       "type": "shutdown_request",
-       "request_id": "...",
-       "reason": "..."
-   })
+   SendMessage(
+       to=target,
+       summary="Shutdown teamee: task completed",
+       message={
+           "type": "shutdown_request",
+           "request_id": "...",
+           "reason": "..."
+       }
+   )
    ```
 
-2. **如果必须使用 string message，必须同时提供 summary 参数**：
+2. **如果必须使用 string message，同样需要 summary**：
    ```
    SendMessage(
        to=target,
@@ -81,9 +85,10 @@
    )
    ```
 
-3. **🔴 禁止**：发送 string message 但不提供 summary
+3. **🔴 禁止**：任何 SendMessage 调用不提供 summary
    ```
-   # ❌ 这会导致错误：Error: summary is required when message is a string
+   # ❌ summary 是 UI 预览必需字段，无论 message 类型
+   SendMessage(to=target, message={"type": "shutdown_request", ...})
    SendMessage(to=target, message="Task #1 已完成")
    ```
 
@@ -317,9 +322,8 @@ Lead Agent 必须进入监控循环，不可跳过！
 
 # ⚠️ 监控循环 SendMessage 规则 (🔴 必须遵守):
 # 1. SendMessage 仅用于发送 shutdown_request（必须是 object 类型）
-# 2. 所有状态报告直接输出文本（用文本输出工具），禁止通过 SendMessage 发送
-# 3. 禁止使用 SendMessage 发送 string 类型的 message
-# 违反这些规则会导致 "summary is required when message is a string" 错误
+# 2. 所有 SendMessage 调用必须提供 summary 参数
+# 3. 所有状态报告直接输出文本（用文本输出工具），禁止通过 SendMessage 发送
 
 loop_interval = 30  # 秒
 max_wait_time = 7200  # 2 小时
@@ -428,11 +432,15 @@ while (now() - start_time) < max_wait_time:
             # 输出: "任务 {task.id} 已完成，即时销毁 Teamee: {teamee_name}"
 
             # B1. 发送 shutdown_request
-            SendMessage(to=teamee_name, message={
-                "type": "shutdown_request",
-                "reason": f"任务 {task.id} 已完成，释放资源",
-                "request_id": f"shutdown-{task.id}-{timestamp()}"
-            })
+            SendMessage(
+                to=teamee_name,
+                summary="Shutdown teamee: task completed",
+                message={
+                    "type": "shutdown_request",
+                    "reason": f"任务 {task.id} 已完成，释放资源",
+                    "request_id": f"shutdown-{task.id}-{timestamp()}"
+                }
+            )
 
             # B3. 从映射表移除
             del teamee_map[task.id]
@@ -577,11 +585,15 @@ while (now() - start_time) < max_wait_time:
                     old_teamee = teamee_map[target_task_id]
 
                     # D1a. Shutdown 旧 Teamee
-                    SendMessage(to=old_teamee, message={
-                        "type": "shutdown_request",
-                        "reason": f"守护进程指令: {reason}",
-                        "request_id": f"daemon-restart-{target_task_id}-{timestamp()}"
-                    })
+                    SendMessage(
+                        to=old_teamee,
+                        summary="Shutdown teamee: daemon restart",
+                        message={
+                            "type": "shutdown_request",
+                            "reason": f"守护进程指令: {reason}",
+                            "request_id": f"daemon-restart-{target_task_id}-{timestamp()}"
+                        }
+                    )
                     del teamee_map[target_task_id]
 
                     # D1b. 根据策略创建新 Teamee
@@ -627,11 +639,15 @@ while (now() - start_time) < max_wait_time:
                 # 中止单个任务
                 if target_task_id in teamee_map:
                     teamee_name = teamee_map[target_task_id]
-                    SendMessage(to=teamee_name, message={
-                        "type": "shutdown_request",
-                        "reason": f"守护进程中止指令: {reason}",
-                        "request_id": f"daemon-abort-{target_task_id}-{timestamp()}"
-                    })
+                    SendMessage(
+                        to=teamee_name,
+                        summary="Shutdown teamee: daemon abort",
+                        message={
+                            "type": "shutdown_request",
+                            "reason": f"守护进程中止指令: {reason}",
+                            "request_id": f"daemon-abort-{target_task_id}-{timestamp()}"
+                        }
+                    )
                     del teamee_map[target_task_id]
                     update_task_file(target_task_id, status="failed")
                 processed_action_ids.append(action.get("id"))
@@ -644,11 +660,15 @@ while (now() - start_time) < max_wait_time:
             elif action_type == "abort_all":
                 # 全局中止: shutdown 所有 Teamee，终止监控循环
                 for task_id, teamee_name in teamee_map.items():
-                    SendMessage(to=teamee_name, message={
-                        "type": "shutdown_request",
-                        "reason": "守护进程全局中止指令",
-                        "request_id": f"daemon-abort-all-{task_id}-{timestamp()}"
-                    })
+                    SendMessage(
+                        to=teamee_name,
+                        summary="Shutdown teamee: abort all",
+                        message={
+                            "type": "shutdown_request",
+                            "reason": "守护进程全局中止指令",
+                            "request_id": f"daemon-abort-all-{task_id}-{timestamp()}"
+                        }
+                    )
                 teamee_map.clear()
                 # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
                 # 输出: "收到 abort_all 指令，终止监控循环"
@@ -750,11 +770,15 @@ if (now() - start_time) >= max_wait_time:
     # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
     # 输出: "监控超时，强制执行清理"
     for task_id, teamee_name in teamee_map.items():
-        SendMessage(to=teamee_name, message={
-            "type": "shutdown_request",
-            "reason": "监控超时，强制清理",
-            "request_id": f"force-shutdown-{task_id}-{timestamp()}"
-        })
+        SendMessage(
+            to=teamee_name,
+            summary="Shutdown teamee: timeout cleanup",
+            message={
+                "type": "shutdown_request",
+                "reason": "监控超时，强制清理",
+                "request_id": f"force-shutdown-{task_id}-{timestamp()}"
+            }
+        )
 ```
 
 **上下文恢复协议**:

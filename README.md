@@ -3,7 +3,7 @@
 > 基于插件的 AI Agent 工作流框架，为 Claude Code 提供任务管理、工作流编排、角色管理等能力
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.2.4-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.2.5-blue.svg)](https://github.com/ph419/tackle)
 
 **[English](https://github.com/ph419/tackle/blob/main/README.en.md)**
 
@@ -79,7 +79,7 @@ tackle-harness migrate
 tackle-harness build
 ```
 
-> **注意**：全局安装模式下，技能和钩子由 npm 全局管理，项目不再需要本地的 `.claude/skills/` 和 `.claude/hooks/` 目录。项目只需保留配置文件（`.claude/config/` 和 `.claude/settings.json`）。
+> **注意**：全局安装模式下，技能和钩子由 npm 全局管理，直接从全局安装目录加载。项目目录下**不会生成** `.claude/skills/` 或 `.claude/hooks/`，只需保留配置文件（`.claude/config/` 和 `.claude/settings.json`）即可。
 
 ## 使用场景
 
