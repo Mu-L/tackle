@@ -15,8 +15,8 @@ var path = require('path');
 var fs = require('fs');
 var os = require('os');
 
-var migrate = require('../../commands/migrate');
-var init = require('../../commands/init');
+var migrate = require('../../bin/commands/migrate');
+var init = require('../../bin/commands/init');
 var pv = require('../../plugins/runtime/plugin-validator');
 
 // ---------------------------------------------------------------------------
@@ -120,6 +120,15 @@ function createTestProject(options) {
   fs.writeFileSync(
     path.join(targetRoot, '.claude', 'config', 'harness-config.yaml'),
     '# test config\ncontext_window:\n  enabled: true\n',
+    'utf-8'
+  );
+
+  // Create templates directory for init command
+  var templatesDir = path.join(packageRoot, 'templates');
+  fs.mkdirSync(templatesDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(templatesDir, 'harness-config.yaml'),
+    '# template config\ncontext_window:\n  enabled: true\n',
     'utf-8'
   );
 
@@ -277,8 +286,14 @@ test.describe('WP-124-1: v0.1.x -> v0.2.0 upgrade path', function () {
 
   test('should migrate project with local hook directories', function () {
     var project = createTestProject({
-      corePlugins: [],
-      plugins: [],
+      corePlugins: [
+        { name: 'hook-skill-gate', version: '1.0.0', type: 'hook', description: 'Skill gate' },
+        { name: 'hook-session-start', version: '1.0.0', type: 'hook', description: 'Session start' },
+      ],
+      plugins: [
+        { name: 'hook-skill-gate' },
+        { name: 'hook-session-start' },
+      ],
       projectHooks: ['hook-skill-gate', 'hook-session-start'],
     });
 
@@ -670,8 +685,14 @@ test.describe('WP-165: Hook whitelist filtering - migrate command', function () 
 
   test('should remove all tackle-harness hooks when only those exist', function () {
     var project = createTestProject({
-      corePlugins: [],
-      plugins: [],
+      corePlugins: [
+        { name: 'hook-skill-gate', version: '1.0.0', type: 'hook', description: 'Skill gate' },
+        { name: 'hook-session-start', version: '1.0.0', type: 'hook', description: 'Session start' },
+      ],
+      plugins: [
+        { name: 'hook-skill-gate' },
+        { name: 'hook-session-start' },
+      ],
       projectHooks: ['hook-skill-gate', 'hook-session-start'],
     });
 
@@ -724,8 +745,14 @@ test.describe('WP-165: Hook whitelist filtering - migrate command', function () 
 
   test('should remove only tackle-harness hooks in mixed scenario', function () {
     var project = createTestProject({
-      corePlugins: [],
-      plugins: [],
+      corePlugins: [
+        { name: 'hook-skill-gate', version: '1.0.0', type: 'hook', description: 'Skill gate' },
+        { name: 'hook-session-start', version: '1.0.0', type: 'hook', description: 'Session start' },
+      ],
+      plugins: [
+        { name: 'hook-skill-gate' },
+        { name: 'hook-session-start' },
+      ],
       projectHooks: ['hook-skill-gate', 'my-custom-hook', 'hook-session-start', 'third-party-hook'],
     });
 
@@ -791,8 +818,14 @@ test.describe('WP-165: Hook whitelist filtering - init command', function () {
 
   test('should remove all tackle-harness hooks when only those exist', function () {
     var project = createTestProject({
-      corePlugins: [],
-      plugins: [],
+      corePlugins: [
+        { name: 'hook-skill-gate', version: '1.0.0', type: 'hook', description: 'Skill gate' },
+        { name: 'hook-session-start', version: '1.0.0', type: 'hook', description: 'Session start' },
+      ],
+      plugins: [
+        { name: 'hook-skill-gate' },
+        { name: 'hook-session-start' },
+      ],
       projectHooks: ['hook-skill-gate', 'hook-session-start'],
     });
 
@@ -843,8 +876,14 @@ test.describe('WP-165: Hook whitelist filtering - init command', function () {
 
   test('should remove only tackle-harness hooks in mixed scenario', function () {
     var project = createTestProject({
-      corePlugins: [],
-      plugins: [],
+      corePlugins: [
+        { name: 'hook-skill-gate', version: '1.0.0', type: 'hook', description: 'Skill gate' },
+        { name: 'hook-session-start', version: '1.0.0', type: 'hook', description: 'Session start' },
+      ],
+      plugins: [
+        { name: 'hook-skill-gate' },
+        { name: 'hook-session-start' },
+      ],
       projectHooks: ['hook-skill-gate', 'my-custom-hook', 'hook-session-start', 'third-party-hook'],
     });
 
@@ -893,6 +932,110 @@ test.describe('WP-165: Hook whitelist filtering - init command', function () {
       var mock = createMockInitContext(project);
       init.execute(mock.ctx);
       // No assertion on exit code since init command does not call ctx.exit
+    } finally {
+      project.cleanup();
+    }
+  });
+
+});
+
+// ---------------------------------------------------------------------------
+// WP-168: isLegacyLocalHook cross-platform fix
+// ---------------------------------------------------------------------------
+
+test.describe('WP-168: isLegacyLocalHook cross-platform fix', function () {
+
+  test('should not flag Linux global install paths as legacy', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      settings: {
+        hooks: {
+          PreToolUse: [{
+            matcher: 'Edit|Write',
+            hooks: [{ command: 'node "/usr/lib/node_modules/tackle-harness/plugins/core/hook-skill-gate/index.js" --pre-tool' }]
+          }]
+        }
+      }
+    });
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+      var settings = JSON.parse(fs.readFileSync(project.settingsPath, 'utf-8'));
+      assert.strictEqual(settings.hooks.PreToolUse.length, 1, 'Linux global hook should be preserved');
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should not flag macOS global install paths as legacy', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      settings: {
+        hooks: {
+          PreToolUse: [{
+            matcher: 'Edit|Write',
+            hooks: [{ command: 'node "/usr/local/lib/node_modules/tackle-harness/plugins/core/hook-skill-gate/index.js"' }]
+          }]
+        }
+      }
+    });
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+      var settings = JSON.parse(fs.readFileSync(project.settingsPath, 'utf-8'));
+      assert.strictEqual(settings.hooks.PreToolUse.length, 1, 'macOS global hook should be preserved');
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should still flag relative paths with ../ as legacy', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      settings: {
+        hooks: {
+          PreToolUse: [{
+            matcher: 'Edit|Write',
+            hooks: [{ command: 'node "../plugins/core/hook-skill-gate/index.js"' }]
+          }]
+        }
+      }
+    });
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+      var settings = JSON.parse(fs.readFileSync(project.settingsPath, 'utf-8'));
+      assert.strictEqual(settings.hooks.PreToolUse.length, 0, 'Legacy relative path hook should be removed');
+      assert.strictEqual(mock.getExitCode(), 0);
+    } finally {
+      project.cleanup();
+    }
+  });
+
+  test('should not flag Windows absolute paths as legacy', function () {
+    var project = createTestProject({
+      corePlugins: [],
+      plugins: [],
+      settings: {
+        hooks: {
+          PreToolUse: [{
+            matcher: 'Edit|Write',
+            hooks: [{ command: 'node "C:/Users/dev/AppData/Roaming/npm/node_modules/tackle-harness/plugins/core/hook-skill-gate/index.js"' }]
+          }]
+        }
+      }
+    });
+    try {
+      var mock = createMockContext(project);
+      migrate.execute(mock.ctx);
+      var settings = JSON.parse(fs.readFileSync(project.settingsPath, 'utf-8'));
+      assert.strictEqual(settings.hooks.PreToolUse.length, 1, 'Windows absolute path hook should be preserved');
+      assert.strictEqual(mock.getExitCode(), 0);
     } finally {
       project.cleanup();
     }

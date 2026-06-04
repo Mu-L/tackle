@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.6] - 2026-06-04
+
+### Changed
+
+- **CLI 命令目录重构**：`commands/` 下 13 个子命令模块移至 `bin/commands/`，与入口文件 `bin/tackle.js` 同级组织，消除 `../plugins/` 相对路径层级混乱
+- **Hook 清理逻辑提取为共享模块**：从 `init.js` 和 `migrate.js` 中提取重复的 ~160 行 hook 清理代码到 `plugins/runtime/cleanup-utils.js`（DRY 重构），两个命令各减少约 80 行重复代码
+
+### Added
+
+- `plugins/runtime/cleanup-utils.js`：统一的 settings.json hook 清理工具模块，包含 `isLegacyLocalHook()` 和 `cleanupSettingsHooks()` 接口
+- `test/runtime/test-cleanup-utils.js`：cleanup-utils 单元测试
+- `test/runtime/test-migrate.js` 扩展 migrate 命令测试覆盖（+167 行）
+
+### Fixed
+
+- `bin/commands/init.js` 和 `bin/commands/migrate.js` require 路径修正（`../plugins/` → `../../plugins/`），适配目录重构后的正确引用
+- `plugins/core/skill-task-creator/skill.md` 文档更新
+
 ## [0.2.5] - 2026-06-01
 
 ### Fixed
@@ -338,6 +356,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.2.6]: https://github.com/ph419/tackle/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/ph419/tackle/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ph419/tackle/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/ph419/tackle/compare/v0.2.2...v0.2.3

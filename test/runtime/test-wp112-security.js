@@ -2,7 +2,7 @@
  * Unit tests for WP-112: A1-1 安全最小集
  *
  * Tests:
- *   1. confirmInstall() in commands/install.js
+ *   1. confirmInstall() in bin/commands/install.js
  *   2. External plugin source warnings in harness-build.js._buildPlugin()
  *   3. validateCapabilities() in plugins/runtime/plugin-validator.js
  *
@@ -21,7 +21,7 @@ const os = require('os');
 // Test confirmInstall()
 // ---------------------------------------------------------------------------
 
-const { confirmInstall, CAPABILITY_LEVELS } = require('../../commands/install');
+const { confirmInstall, CAPABILITY_LEVELS } = require('../../bin/commands/install');
 
 test.describe('WP-112: confirmInstall()', () => {
   test('should auto-approve when capabilities are empty', async () => {

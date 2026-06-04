@@ -2,7 +2,7 @@
 
 var path = require('path');
 var fs = require('fs');
-var HarnessBuild = require('../plugins/runtime/harness-build');
+var HarnessBuild = require('../../plugins/runtime/harness-build');
 
 /**
  * Setup-global command - Install global skills to ~/.claude/skills/

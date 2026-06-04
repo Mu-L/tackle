@@ -92,7 +92,7 @@ if (flags.root) {
 }
 
 // Command loading and dispatch
-var commandsDir = path.join(__dirname, '..', 'commands');
+var commandsDir = path.join(__dirname, 'commands');
 
 /**
  * Built-in command name to module file mapping.
@@ -132,6 +132,9 @@ function loadCommand(cmdName) {
   }
 
   // Check alias support in all command modules
+  if (!fs.existsSync(commandsDir)) {
+    return null;
+  }
   var entries = fs.readdirSync(commandsDir);
   for (var j = 0; j < entries.length; j++) {
     if (entries[j].endsWith('.js')) {

@@ -2,6 +2,7 @@
 
 var path = require('path');
 var fs = require('fs');
+var cleanupUtils = require('../../plugins/runtime/cleanup-utils');
 
 /**
  * Init command - First-time setup: build + generate default config
@@ -59,7 +60,7 @@ module.exports = {
     var manifestPath = path.join(claudeDir, 'harness-manifest.json');
     if (!fs.existsSync(manifestPath)) {
       try {
-        var ManifestResolver = require('../plugins/runtime/manifest-resolver');
+        var ManifestResolver = require('../../plugins/runtime/manifest-resolver');
         var defaultManifest = ManifestResolver.createDefaultManifest(ctx.packageRoot);
         var manifestContent = JSON.stringify(defaultManifest, null, 2);
         fs.writeFileSync(manifestPath, manifestContent + '\n', 'utf-8');
@@ -93,62 +94,10 @@ module.exports = {
     if (fs.existsSync(settingsPath)) {
       try {
         var settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-        var hadProjectHooks = false;
+        var result = cleanupUtils.cleanupSettingsHooks(settings);
 
-        // Helper to check if a hook command uses a relative path (legacy local install)
-        function isLegacyLocalHook(command) {
-          if (!command) return false;
-          return command.indexOf('../') !== -1 || command.indexOf('..\\') !== -1 ||
-                 (command.indexOf('node "') === 0 && !/[a-zA-Z]:/.test(command) && command.indexOf('./') === -1);
-        }
-
-        // Check for PreToolUse hooks (Edit|Write gate)
-        if (settings.hooks && settings.hooks.PreToolUse && settings.hooks.PreToolUse.length > 0) {
-          var preMatcher = 'Edit|Write';
-          for (var i = 0; i < settings.hooks.PreToolUse.length; i++) {
-            if (settings.hooks.PreToolUse[i].matcher === preMatcher) {
-              var hookCmd = settings.hooks.PreToolUse[i].hooks && settings.hooks.PreToolUse[i].hooks[0] && settings.hooks.PreToolUse[i].hooks[0].command;
-              if (isLegacyLocalHook(hookCmd)) {
-                settings.hooks.PreToolUse.splice(i, 1);
-                i--;
-                hadProjectHooks = true;
-              }
-            }
-          }
-        }
-
-        // Check for PostToolUse hooks (Skill gate)
-        if (settings.hooks && settings.hooks.PostToolUse && settings.hooks.PostToolUse.length > 0) {
-          var postMatcher = 'Skill';
-          for (var j = 0; j < settings.hooks.PostToolUse.length; j++) {
-            if (settings.hooks.PostToolUse[j].matcher === postMatcher) {
-              var hookCmd = settings.hooks.PostToolUse[j].hooks && settings.hooks.PostToolUse[j].hooks[0] && settings.hooks.PostToolUse[j].hooks[0].command;
-              if (isLegacyLocalHook(hookCmd)) {
-                settings.hooks.PostToolUse.splice(j, 1);
-                j--;
-                hadProjectHooks = true;
-              }
-            }
-          }
-        }
-
-        // Check for SessionStart hooks (plan-mode rules)
-        if (settings.hooks && settings.hooks.SessionStart && settings.hooks.SessionStart.length > 0) {
-          var sessionMatcher = 'startup|clear|compact';
-          for (var k = 0; k < settings.hooks.SessionStart.length; k++) {
-            if (settings.hooks.SessionStart[k].matcher === sessionMatcher) {
-              var hookCmd = settings.hooks.SessionStart[k].hooks && settings.hooks.SessionStart[k].hooks[0] && settings.hooks.SessionStart[k].hooks[0].command;
-              if (isLegacyLocalHook(hookCmd)) {
-                settings.hooks.SessionStart.splice(k, 1);
-                k--;
-                hadProjectHooks = true;
-              }
-            }
-          }
-        }
-
-        if (hadProjectHooks) {
-          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+        if (result.hadProjectHooks) {
+          fs.writeFileSync(settingsPath, JSON.stringify(result.settings, null, 2) + '\n', 'utf-8');
           console.log(ctx.colorize('[tackle-harness] Cleaned up legacy project-level hooks registration', 'yellow'));
           hasLegacyStructure = true;
           cleanupActions.push('Removed project-level hooks from .claude/settings.json');
@@ -163,55 +112,16 @@ module.exports = {
     var projectSkillsDir = path.join(claudeDir, 'skills');
     if (fs.existsSync(projectSkillsDir)) {
       try {
-        var registry = JSON.parse(fs.readFileSync(ctx.registryPath, 'utf-8'));
-        var globalSkillNames = {};
-
-        for (var m = 0; m < registry.plugins.length; m++) {
-          var p = registry.plugins[m];
-          var metaPath = path.join(ctx.packageRoot, 'plugins', 'core', p.source || p.name, 'plugin.json');
-          if (fs.existsSync(metaPath)) {
-            try {
-              var meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-              if (meta.type === 'skill') {
-                var fullName = meta.name || p.name;
-                globalSkillNames[fullName] = true;
-                if (fullName.indexOf('skill-') === 0) {
-                  var shortName = fullName.substring(6);
-                  globalSkillNames[shortName] = true;
-                }
-              }
-            } catch (e) {
-              // skip unparseable plugins
-            }
-          }
-        }
-
-        var projectSkills = fs.readdirSync(projectSkillsDir);
-        var removedSkills = [];
-
-        for (var n = 0; n < projectSkills.length; n++) {
-          var skillName = projectSkills[n];
-          var skillPath = path.join(projectSkillsDir, skillName);
-
-          if (globalSkillNames[skillName] && fs.statSync(skillPath).isDirectory()) {
-            fs.rmSync(skillPath, { recursive: true, force: true });
-            removedSkills.push(skillName);
-          }
-        }
+        var removedSkills = cleanupUtils.cleanupProjectSkills(projectSkillsDir, ctx.registryPath, ctx.packageRoot);
 
         if (removedSkills.length > 0) {
           console.log(ctx.colorize('[tackle-harness] Cleaned up ' + removedSkills.length + ' project-level skills (now available globally)', 'yellow'));
           hasLegacyStructure = true;
           cleanupActions.push('Removed ' + removedSkills.length + ' project-level skills (now available globally)');
 
-          try {
-            var remainingSkillEntries = fs.readdirSync(projectSkillsDir);
-            if (remainingSkillEntries.length === 0) {
-              fs.rmdirSync(projectSkillsDir);
-              console.log('[tackle-harness] Removed empty .claude/skills/ directory');
-            }
-          } catch (e) {
-            // directory not empty or other error, leave it
+          cleanupUtils.removeEmptyDir(projectSkillsDir);
+          if (!fs.existsSync(projectSkillsDir)) {
+            console.log('[tackle-harness] Removed empty .claude/skills/ directory');
           }
         }
       } catch (err) {
@@ -224,19 +134,7 @@ module.exports = {
     var projectHooksDir = path.join(claudeDir, 'hooks');
     if (fs.existsSync(projectHooksDir)) {
       try {
-        var tackleHooks = ['hook-skill-gate', 'hook-session-start'];
-        var hookEntries = fs.readdirSync(projectHooksDir);
-        var removedHooks = [];
-
-        for (var o = 0; o < hookEntries.length; o++) {
-          var hookName = hookEntries[o];
-          var hookPath = path.join(projectHooksDir, hookName);
-
-          if (fs.statSync(hookPath).isDirectory() && tackleHooks.indexOf(hookName) !== -1) {
-            fs.rmSync(hookPath, { recursive: true, force: true });
-            removedHooks.push(hookName);
-          }
-        }
+        var removedHooks = cleanupUtils.cleanupProjectHooks(projectHooksDir, ctx.registryPath, ctx.packageRoot);
 
         if (removedHooks.length > 0) {
           console.log(ctx.colorize('[tackle-harness] Cleaned up ' + removedHooks.length + ' project-level hooks (now available globally)', 'yellow'));
@@ -244,14 +142,9 @@ module.exports = {
           cleanupActions.push('Removed ' + removedHooks.length + ' project-level hooks (now available globally)');
         }
 
-        try {
-          var remainingEntries = fs.readdirSync(projectHooksDir);
-          if (remainingEntries.length === 0) {
-            fs.rmdirSync(projectHooksDir);
-            console.log('[tackle-harness] Removed empty .claude/hooks/ directory');
-          }
-        } catch (e) {
-          // directory not empty or other error, leave it
+        cleanupUtils.removeEmptyDir(projectHooksDir);
+        if (!fs.existsSync(projectHooksDir)) {
+          console.log('[tackle-harness] Removed empty .claude/hooks/ directory');
         }
       } catch (err) {
         console.error('[tackle-harness] Warning: Failed to clean up project-level hooks');
