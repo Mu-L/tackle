@@ -331,6 +331,21 @@ shutdown_timeout = 15  # 等待 Teamee shutdown 响应的超时
 
 # ---- 状态持久化初始化 (防上下文压缩丢失) ----
 state_file = ".claude-daemon/dispatcher-state.json"
+heartbeat_file = ".claude-daemon/heartbeat.json"
+daemon_actions_file = ".claude-daemon/daemon-actions.json"
+
+# ---- 多窗口环境检测 ----
+# 当 TACKLE_MULTI_WINDOW_SESSION 和 TACKLE_WINDOW_ID 环境变量同时存在时，
+# 将状态文件写入 windows/{window_id}/ 子目录，支持协调器聚合
+multi_window_session = env("TACKLE_MULTI_WINDOW_SESSION")
+window_id = env("TACKLE_WINDOW_ID")
+is_multi_window = bool(multi_window_session and window_id)
+
+if is_multi_window:
+    state_dir = f".claude-daemon/windows/{window_id}"
+    ensure_dir(state_dir)
+    state_file = f"{state_dir}/state.json"
+    heartbeat_file = f"{state_dir}/heartbeat.json"
 
 # 检查是否存在已有状态文件（上下文压缩后恢复）
 if file_exists(state_file):
@@ -363,6 +378,7 @@ processed_action_ids = processed_action_ids if 'processed_action_ids' in locals(
 
 # ---- 批量大小控制参数 ----
 max_batch_size = get_config("agent_dispatcher.max_batch_size", default=5)
+current_batch = current_batch if 'current_batch' in locals() else []
 pending_batches = pending_batches if 'pending_batches' in locals() else []
 
 # 首次写入状态文件
@@ -376,7 +392,7 @@ initial_state = {
     "total_tasks": len(tasks) if 'tasks' in locals() else 0,
     "status": "monitoring",
     "max_batch_size": max_batch_size,
-    "current_batch": [],
+    "current_batch": current_batch,
     "pending_batches": pending_batches,
     "global_pause_flag": False
 }
@@ -405,6 +421,42 @@ while (now() - start_time) < max_wait_time:
         pending_batches = state.get("pending_batches", pending_batches)
         global_pause_flag = state.get("global_pause_flag", False)
 
+    # ---- Phase 0.1: 多窗口阶段信号检查 ----
+    # 读取 multi-window-session.json，检查当前窗口的阶段是否就绪
+    if is_multi_window:
+        session_file = ".claude-daemon/multi-window-session.json"
+        try:
+            session_data = json_loads(Read(file_path=session_file))
+        except Exception:
+            session_data = None
+
+        if session_data:
+            my_stage = None
+            for s in session_data.get("stages", []):
+                if window_id in s.get("windows", []):
+                    my_stage = s
+                    break
+
+            if my_stage:
+                if my_stage.get("status") == "pending":
+                    # 当前阶段未就绪，跳过本轮 Teamee 创建
+                    # ── 状态输出 ──
+                    # 输出: "⏸ 窗口 {window_id} 阶段 {my_stage['stage_id']} 尚未就绪，等待阶段信号"
+                    pass  # 跳过后续 Phase C 创建逻辑（通过标志控制）
+                elif my_stage.get("status") == "completed":
+                    # 当前阶段已完成，检查是否有下一阶段
+                    next_stage = None
+                    for s in session_data.get("stages", []):
+                        if s.get("stage_id") == my_stage.get("stage_id") + 1:
+                            next_stage = s
+                            break
+                    if next_stage and next_stage.get("status") == "active":
+                        # 切换到下一阶段的任务
+                        assigned_wps = next_stage.get("work_packages", assigned_wps)
+                        current_stage = next_stage.get("stage_id", current_stage)
+                        # ── 状态输出 ──
+                        # 输出: "🔄 窗口 {window_id} 切换到阶段 {next_stage['stage_id']}: {next_stage.get('name', '')}"
+
     # ---- Phase A: 获取任务状态 ----
     tasks = TaskList()
 
@@ -422,7 +474,10 @@ while (now() - start_time) < max_wait_time:
         "last_update": now_iso8601(),
         "status": "monitoring"  # monitoring / shutting_down / completed
     }
-    Write(file_path=".claude-daemon/heartbeat.json", content=json_dumps(heartbeat_data))
+    # 多窗口模式下增加 window_id 字段
+    if is_multi_window:
+        heartbeat_data["window_id"] = window_id
+    Write(file_path=heartbeat_file, content=json_dumps(heartbeat_data))
 
     # ---- Phase B: 即时销毁已完成的 Teamee ----
     for task in tasks:
@@ -452,7 +507,7 @@ while (now() - start_time) < max_wait_time:
             update_task_file(task.id, status="completed")
 
     # ---- Phase B.5: 状态持久化写回 (teamee_map 变更) ----
-    Write(file_path=state_file, content=json_dumps({
+    state_payload_b5 = {
         "team_name": team_name,
         "teamee_map": teamee_map,
         "wp_assignments": wp_assignments,
@@ -465,7 +520,11 @@ while (now() - start_time) < max_wait_time:
         "current_batch": current_batch,
         "pending_batches": pending_batches,
         "global_pause_flag": global_pause_flag
-    }))
+    }
+    if is_multi_window:
+        state_payload_b5["window_id"] = window_id
+        state_payload_b5["session_id"] = multi_window_session
+    Write(file_path=state_file, content=json_dumps(state_payload_b5))
 
     # ---- Phase C: 按需创建 Teamee 处理 newly-unblocked 任务 ----
     # C0. 读取并发配置，计算当前时段的并发上限
@@ -542,7 +601,7 @@ while (now() - start_time) < max_wait_time:
             )
 
     # ---- Phase C.5: 状态持久化写回 (teamee_map 变更) ----
-    Write(file_path=state_file, content=json_dumps({
+    state_payload_c5 = {
         "team_name": team_name,
         "teamee_map": teamee_map,
         "wp_assignments": wp_assignments,
@@ -555,7 +614,11 @@ while (now() - start_time) < max_wait_time:
         "current_batch": current_batch,
         "pending_batches": pending_batches,
         "global_pause_flag": global_pause_flag
-    }))
+    }
+    if is_multi_window:
+        state_payload_c5["window_id"] = window_id
+        state_payload_c5["session_id"] = multi_window_session
+    Write(file_path=state_file, content=json_dumps(state_payload_c5))
 
     # ---- Phase D.1: 读取守护进程指令 (DISP-003) ----
     # 在判断退出条件前，读取守护进程下发的指令
@@ -683,7 +746,7 @@ while (now() - start_time) < max_wait_time:
             }))
 
     # ---- Phase D.5: 状态持久化写回 (processed_action_ids 变更) ----
-    Write(file_path=state_file, content=json_dumps({
+    state_payload_d5 = {
         "team_name": team_name,
         "teamee_map": teamee_map,
         "wp_assignments": wp_assignments,
@@ -696,7 +759,11 @@ while (now() - start_time) < max_wait_time:
         "current_batch": current_batch,
         "pending_batches": pending_batches,
         "global_pause_flag": global_pause_flag
-    }))
+    }
+    if is_multi_window:
+        state_payload_d5["window_id"] = window_id
+        state_payload_d5["session_id"] = multi_window_session
+    Write(file_path=state_file, content=json_dumps(state_payload_d5))
 
     # ---- Phase D: 判断退出条件 ----
     completed = count(status == "completed")
@@ -705,9 +772,11 @@ while (now() - start_time) < max_wait_time:
     if completed == total:
         # 写入最终心跳 (DISP-001): 状态为 completed
         heartbeat_data["status"] = "completed"
-        Write(file_path=".claude-daemon/heartbeat.json", content=json_dumps(heartbeat_data))
+        if is_multi_window:
+            heartbeat_data["window_id"] = window_id
+        Write(file_path=heartbeat_file, content=json_dumps(heartbeat_data))
         # 写入最终状态文件
-        Write(file_path=state_file, content=json_dumps({
+        final_state = {
             "team_name": team_name,
             "teamee_map": teamee_map,
             "wp_assignments": wp_assignments,
@@ -719,7 +788,11 @@ while (now() - start_time) < max_wait_time:
             "max_batch_size": max_batch_size,
             "current_batch": current_batch,
             "pending_batches": pending_batches
-        }))
+        }
+        if is_multi_window:
+            final_state["window_id"] = window_id
+            final_state["session_id"] = multi_window_session
+        Write(file_path=state_file, content=json_dumps(final_state))
         # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
         # 输出: "所有任务完成，退出监控循环"
         break
@@ -745,7 +818,7 @@ while (now() - start_time) < max_wait_time:
             # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
             # 输出: "当前批次完成，自动加载下一批: {len(current_batch)} 个任务, 剩余 {len(pending_batches)} 个"
             # 写回状态文件保存批次进度
-            Write(file_path=state_file, content=json_dumps({
+            state_payload_batch = {
                 "team_name": team_name,
                 "teamee_map": teamee_map,
                 "wp_assignments": wp_assignments,
@@ -758,7 +831,11 @@ while (now() - start_time) < max_wait_time:
                 "current_batch": current_batch,
                 "pending_batches": pending_batches,
                 "global_pause_flag": global_pause_flag
-            }))
+            }
+            if is_multi_window:
+                state_payload_batch["window_id"] = window_id
+                state_payload_batch["session_id"] = multi_window_session
+            Write(file_path=state_file, content=json_dumps(state_payload_batch))
 
     sleep(loop_interval)
 
@@ -766,7 +843,9 @@ while (now() - start_time) < max_wait_time:
 if (now() - start_time) >= max_wait_time:
     # 写入最终心跳 (DISP-001): 状态为 shutting_down
     heartbeat_data["status"] = "shutting_down"
-    Write(file_path=".claude-daemon/heartbeat.json", content=json_dumps(heartbeat_data))
+    if is_multi_window:
+        heartbeat_data["window_id"] = window_id
+    Write(file_path=heartbeat_file, content=json_dumps(heartbeat_data))
     # ── 状态输出（直接文本输出，禁止使用 SendMessage）──
     # 输出: "监控超时，强制执行清理"
     for task_id, teamee_name in teamee_map.items():

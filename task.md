@@ -2,8 +2,8 @@
 
 ## 📊 快速概览
 
-- **进度**: 29/29 (100%) | v0.2.0 路线图完成 ✅ | WP-152~158 审计修复全部完成 ✅ | WP-161 CI 修复完成 ✅ | WP-162 Hook 路径修复完成 ✅ | WP-163 完成 ✅ | WP-164 完成 ✅ | WP-165 完成 ✅ | WP-166 完成 ✅ | WP-167 完成 ✅ | WP-168 ✅ | WP-169 ✅ | WP-170 ✅
-- **最近更新**: 2026-06-04
+- **进度**: 29/29 (100%) | v0.2.0 路线图完成 ✅ | WP-152~158 审计修复全部完成 ✅ | WP-161 CI 修复完成 ✅ | WP-162 Hook 路径修复完成 ✅ | WP-163 完成 ✅ | WP-164 完成 ✅ | WP-165 完成 ✅ | WP-166 完成 ✅ | WP-167 完成 ✅ | WP-168 ✅ | WP-169 ✅ | WP-170 ✅ | WP-172 ✅ | WP-173 ✅
+- **最近更新**: 2026-06-06
 - **规划文档**: [综合发展规划](docs/consolidated-development-plan.md) | [Final Design](docs/design/harness-universal-platform-final-design.md)
 - **预算**: 850min（v0.2.0，含完整 Worker Threads 沙箱）
 
@@ -22,8 +22,17 @@
 
 | 日期 | 活动描述 |
 |------|----------|
+| 2026-06-06 | WP-173 完成：WP-172 多窗口监控实现验证终审（5 个核心问题全部已解决、2 个非阻塞问题风险可控、912 pass/0 fail、23 plugins 构建验证通过、向后兼容确认无影响、报告 PASS 建议合并） |
 | 2026-06-04 | WP-171 完成：修复 npm 全局安装报错 — commands/ 目录移入 bin/commands/（13 个命令文件移动、require 路径修复、防御性目录检查、cleanup-utils.js 共享模块、全量 808 测试通过、代码审查 PASS） |
 | 2026-06-04 | WP-171 创建：修复 npm 全局安装报错 — commands/ 目录移入 bin/（package.json files 缺失 commands/ 导致 ENOENT，standard 模式拆分为 4 个子工作包） |
+| 2026-06-06 | WP-172-1-impl-a 完成：协调器状态聚合 + 数据结构定义（multi-window-coordinator.js 新模块 280 行：3 个数据结构工厂 + 聚合逻辑 + 阶段管理 + current_batch 修复，44 个新单元测试，全量 819 测试通过） |
+| 2026-06-06 | WP-172-1-impl-b 完成：阶段转换协议 + agent-dispatcher 扩展（coordinator 新增 findStageForWindow/writeStageSignal 函数，skill.md 9 处修改：多窗口环境检测、Phase 0 阶段信号检查、6 处状态写入增加 window_id/session_id、心跳路径可变，8 个新单元测试，全量 52 测试通过） |
+| 2026-06-06 | WP-172-1-impl-c 完成：Watchdog 多会话扩展（watchdog-multi-window.js 新模块：L4 跨窗口级检测 + L5 阶段级检测 + 全局熔断逻辑 + 跨窗口指令分发，48 个新单元测试，全量 100 测试通过） |
+| 2026-06-06 | WP-172-2-test 完成：多窗口监控单元测试（45 个新增用例：协调器聚合边界 27 个 + Watchdog 边界 18 个，总计 137 个测试全部通过，全量 912 runtime 测试通过） |
+| 2026-06-06 | WP-172-3-verify 完成：测试验证（全量 945 测试 0 失败、build 23 插件通过、validate 0 错误 0 警告、单窗口向后兼容验证通过、coordinator 71 测试 + watchdog 66 测试全部通过） |
+| 2026-06-06 | WP-172-4-review 完成：代码审查（137 测试全部通过、数据结构设计合理、协调器聚合逻辑健壮、阶段转换协议正确、agent-dispatcher 向后兼容、Watchdog 熔断机制安全、current_batch 修复正确、文档同步一致） |
+| 2026-06-06 | WP-173 创建：WP-172 多窗口监控实现验证（校验 5 个核心问题是否解决 + 2 个非阻塞问题评估，验证报告输出到 docs/reports/，standard 模式拆分为 4 个子工作包） |
+| 2026-06-06 | WP-172 创建：多窗口并行执行监控设计与实现（HTML 设计方案 + fine-grained 模式拆分为 6 个子工作包：协调器状态聚合/阶段转换协议/Watchdog 多会话扩展/单元测试/测试验证/代码审查） |
 | 2026-06-04 | WP-170 完成：skill-task-creator 多窗口执行规划功能（skill.md 7 处修改：关键词检测、规划模式决策表、算法逻辑 4 阶段、步骤 1.5 检测、Step 9 条件更新、报告模板、Forbidden Thoughts；build + validate 通过，790 测试 0 失败，代码审查 PASS） |
 | 2026-06-04 | WP-170 创建：skill-task-creator 多窗口执行规划功能（修改 skill.md 添加关键词检测、依赖分析算法、多窗口分配和执行规划报告模板，standard 模式拆分为 4 个子工作包） |
 | 2026-06-03 | WP-169 完成：重构 init/migrate 清理逻辑 — 提取 cleanup-utils.js 共享模块（6 个导出函数）、hook 名从 plugin-registry.json 动态派生、init.js 从 260 行降至 175 行、migrate.js 从 194 行降至 113 行、31 个新单元测试、全量 808 测试通过、代码审查 PASS） |

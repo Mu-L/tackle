@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.7] - 2026-06-10
+
+### Added
+
+- **多窗口并行执行监控**（WP-172）：新增 `multi-window-coordinator.js`（556 行），提供多窗口会话状态聚合、数据结构工厂（session/window/heartbeat）、阶段转换协议、全局进度计算和 `current_batch` 修复
+- **Watchdog 多会话扩展**（WP-172）：新增 `watchdog-multi-window.js`，实现 L4 跨窗口级检测 + L5 阶段级检测 + 全局熔断逻辑 + 跨窗口指令分发
+- **skill-agent-dispatcher 多窗口支持**（WP-172）：skill.md 9 处修改 — 多窗口环境检测、Phase 0 阶段信号检查、6 处状态写入增加 `window_id`/`session_id`、心跳路径可变
+- 多窗口监控单元测试（WP-172）：`test-multi-window-coordinator.js`（1230 行，71 个用例）+ `test-watchdog-multi-window.js`（1298 行，66 个用例），总计 137 个新增测试
+
+### Verified
+
+- WP-172 实现终审通过（WP-173）：5 个核心问题全部解决、945 测试 0 失败、build 23 插件通过、validate 0 错误、单窗口向后兼容确认无影响
+
 ## [0.2.6] - 2026-06-04
 
 ### Changed
@@ -356,6 +369,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.2.7]: https://github.com/ph419/tackle/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/ph419/tackle/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/ph419/tackle/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/ph419/tackle/compare/v0.2.3...v0.2.4
