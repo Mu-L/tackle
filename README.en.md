@@ -3,7 +3,7 @@
 > A plugin-based AI Agent workflow framework that provides task management, workflow orchestration, and role management for Claude Code
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.3.6-blue.svg)](https://github.com/ph419/tackle)
+[![Version](https://img.shields.io/badge/version-0.3.7-blue.svg)](https://github.com/ph419/tackle)
 
 **[中文文档](https://github.com/ph419/tackle/blob/main/README.md)**
 
@@ -168,7 +168,7 @@ From v0.3.4 the loop carrier can be upgraded from "pseudo-code inside a Claude s
 
 ```bash
 # Smoke test with the mock executor (no real model calls, free convergence check)
-tackle-harness loop docs/plan/todo-cli-smoke.md --executor=local
+tackle-harness loop test/fixtures/todo-cli-smoke.md --executor=local
 
 # Drive Claude Code to write code round by round
 tackle-harness loop docs/plan/my-plan.md --executor=claude

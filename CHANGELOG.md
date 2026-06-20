@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.7] - 2026-06-21
+
+### Fixed
+
+- **README loop 示例路径修正**：`tackle loop` 冒烟示例原先指向从未被 git 跟踪的 `docs/plan/todo-cli-smoke.md`，现改为仓库内真实可跑的 `test/fixtures/todo-cli-smoke.md`——该文件符合 plan-reader 契约（`##` section + `- [ ]` checklist + 依赖声明 + 成功标准，首行即标注"供 skill-agentic-loop 读取执行"），用 `--executor=local` 可直接冒烟验证收敛。中英文 README（README.md / README.en.md）同步修正
+
 ## [0.3.6] - 2026-06-20
 
 ### Added
@@ -479,6 +485,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.3.7]: https://github.com/ph419/tackle/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/ph419/tackle/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/ph419/tackle/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/ph419/tackle/compare/v0.3.3...v0.3.4
