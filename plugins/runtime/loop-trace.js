@@ -108,6 +108,19 @@ var PHASE_ORDER = ['observe', 'think', 'act', 'reflect', 'decide'];
 
 /**
  * 渲染一行式阶段摘要：`[iter 3] Observe 12ms · Think 1ms · Act 48023ms · Reflect 3ms · Decide 1ms → dispatch WP-XXX`
+ *
+ * Act 段耗时合并（WP-196 后续修复）：engine step() 的 `timePhase('act')` 只包裹
+ * `factoryApi.act()`（产生 dispatch 决策，毫秒级），真正的 `executor.run()`（spawn
+ * claude/glm，单轮可达数十秒~数分钟）由 driver 在 step() 返回**之后**调用（loop.js:808），
+ * 不在 engine act timePhase 计时内。若只渲染 act.elapsedMs，stdout 会打出 `Act 4ms`
+ * 这种掩盖单轮 90%+ 真实 spawn 开销的误导性假象——这正是用户「感觉不是五段式」的真因之一：
+ * 五段计时漏掉了唯一真正耗时的 Act 内部 spawn（实测一轮 act.elapsedMs=4ms 但
+ * executor.spawnMs=90754ms，99.87% 耗时隐形）。
+ *
+ * 故当 roundRecord.executor.spawnMs 为 number 时，把它并入 Act 显示
+ * （engine act 决策 + driver executor 执行 = 真实 Act 总耗时）；executor 缺失
+ * （noop 轮 / local executor）或 spawnMs 非 number 时，保持原行为仅显示 act.elapsedMs。
+ *
  * 缺失阶段显示 `-`；verdict/dispatchedWp 缺失时省略后缀。
  * @param {object} roundRecord（buildRoundRecord 产出）
  * @returns {string}
@@ -122,13 +135,23 @@ function renderOneLine(roundRecord) {
     var p = phases[i];
     if (p && p.phase) byName[p.phase] = p;
   }
+  // executor spawn 耗时（driver 层 executor.run 产生，不在 engine act timePhase 内）。
+  // 存在时并入 Act 段，避免 stdout 的 Act 只反映毫秒级决策、掩盖数十秒的真实 spawn。
+  var execSpawnMs = (roundRecord.executor && typeof roundRecord.executor.spawnMs === 'number')
+    ? roundRecord.executor.spawnMs : null;
   var parts = [];
   for (var j = 0; j < PHASE_ORDER.length; j++) {
     var name = PHASE_ORDER[j];
     var label = PHASE_LABEL[name] || name;
     var entry = byName[name];
     var ms = (entry && typeof entry.elapsedMs === 'number') ? entry.elapsedMs : null;
-    parts.push(label + ' ' + (ms !== null ? ms + 'ms' : '-'));
+    // Act 段：engine act 决策耗时(ms) + driver executor spawn 耗时(execSpawnMs) = 真实 Act 总耗时
+    if (name === 'act' && execSpawnMs !== null) {
+      var combined = (ms !== null ? ms : 0) + execSpawnMs;
+      parts.push(label + ' ' + combined + 'ms');
+    } else {
+      parts.push(label + ' ' + (ms !== null ? ms + 'ms' : '-'));
+    }
   }
   var line = '[iter ' + iter + '] ' + parts.join(' · ');
   if (roundRecord.dispatchedWp) {

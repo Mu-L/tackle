@@ -10,6 +10,11 @@ CLAUDE.md
 # 落盘即生效、事后可回放，属运行时数据不入 git。
 .tackle/
 
+# .tackle-state/ 是 loop driver 的默认 state 目录（per-loop 隔离工作区
+# .tackle-state/{loopId}/，含占位 task.md / PROGRESS.md / .claude-state / trace 落盘），
+# 运行时生成不入 git。
+.tackle-state/
+
 # Docs
 docs/*
 !docs/design/

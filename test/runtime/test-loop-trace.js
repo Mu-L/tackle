@@ -704,6 +704,75 @@ test.describe('WP-196-2-test 维度5: 一行式阶段摘要', function () {
     var line = loopTrace.renderOneLine(rec);
     assert.match(line, /\[iter 5\].*Act 3000ms.*→ dispatch WP-77/);
   });
+
+  // -------------------------------------------------------------------------
+  // WP-196 后续修复：Act 段并入 executor.spawnMs
+  // 根因（实测坐实）：engine step() 的 timePhase('act') 只包 factoryApi.act()（产生
+  // dispatch 决策，毫秒级），真正的 executor.run()（spawn claude/glm，单轮数十秒）由
+  // driver 在 step() 返回后调用（loop.js:808），不在 act timePhase 内。若 renderOneLine
+  // 只显示 act.elapsedMs，会打出「Act 4ms」掩盖 90754ms 真实 spawn 的误导性假象。
+  // -------------------------------------------------------------------------
+
+  test('Act 段并入 executor.spawnMs：engine act 决策 + driver executor 执行 = 真实 Act 总耗时', function () {
+    // 复刻真实 loop 实测 trace（loop-20260626-080832-bf6o7c iter1）：
+    // act.elapsedMs=4（engine 决策）+ executor.spawnMs=90754（driver spawn claude 90.7s）
+    var phaseTimings = [
+      { phase: 'observe', elapsedMs: 108 },
+      { phase: 'think', elapsedMs: 2 },
+      { phase: 'act', elapsedMs: 4 },
+      { phase: 'reflect', elapsedMs: 2 },
+      { phase: 'decide', elapsedMs: 2 },
+    ];
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-spawn-merge',
+      iteration: 1,
+      phaseTimings: phaseTimings,
+      executorTrace: { spawnMs: 90754, exitCode: 0, timedOut: false, rateLimited: false, tokenUsage: null },
+      verdict: 'continue',
+      dispatchedWp: 'WP-BASELINE',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    // Act = 4 + 90754 = 90758ms（真实总耗时），而非掩盖 spawn 的 4ms
+    assert.match(line, /Act 90758ms/);
+    assert.equal(/\bAct 4ms\b/.test(line), false, '不应再显示掩盖 spawn 开销的 Act 4ms');
+    // 其余四段不受 spawnMs 合并影响
+    assert.match(line, /Observe 108ms/);
+    assert.match(line, /Think 2ms/);
+    assert.match(line, /→ dispatch WP-BASELINE/);
+  });
+
+  test('Act phase 缺失但 executor.spawnMs 存在：Act 显示 spawn 耗时而非 -', function () {
+    // 边界：phaseTimings 无 act 段（engine 未打点），但 driver 层 executor.run 真实发生了
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-no-act-phase',
+      iteration: 2,
+      phaseTimings: [{ phase: 'observe', elapsedMs: 50 }],
+      executorTrace: { spawnMs: 12000, exitCode: 0, timedOut: false, rateLimited: false, tokenUsage: null },
+      verdict: 'continue',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    // act elapsedMs 缺失按 0 计 + spawnMs 12000 = 12000ms（不应显示 -）
+    assert.match(line, /Act 12000ms/);
+    assert.equal(/Act -/.test(line), false, 'executor 已真实 spawn，Act 不应显示 -');
+  });
+
+  test('executor.spawnMs 非 number 时降级：Act 保持 act.elapsedMs（向后兼容）', function () {
+    // 降级：noop 轮 / local executor / spawn 未完成时 spawnMs 可能为 null
+    var phaseTimings = [
+      { phase: 'observe', elapsedMs: 10 },
+      { phase: 'act', elapsedMs: 3000 },
+    ];
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-null-spawn',
+      iteration: 1,
+      phaseTimings: phaseTimings,
+      executorTrace: { spawnMs: null, exitCode: null, timedOut: false, rateLimited: false, tokenUsage: null },
+      verdict: 'continue',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    // spawnMs=null 不触发合并，Act 保持 act.elapsedMs=3000（向后兼容既有行为）
+    assert.match(line, /Act 3000ms/);
+  });
 });
 
 // ===========================================================================
