@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.15] - 2026-06-27
+
+### Fixed
+
+- **provider-loop-engine `_decide` 末轮达成优先级修复**：终止判定优先级从「熔断 > 发散 > 上限 > 达成 > 继续」改为「熔断 > 发散 > 达成 > 上限 > 继续」——末轮 `iteration == max_iterations` 时 proximity 已达标却被 `max_iterations` 抢判 `timeout`，目标已达成却报失败，违背「目标驱动 self-closing loop」根本语义。同步移除 `_step()` 开头的 `max_iterations` 提前预检（预检在 iteration 递增前拿不到本轮 evalResult，无法判本轮是否达成）：改由 `_decide` 在轮末用最新 evalResult 统一判定——达成则 `achieved`、未达成才 `timeout` 兜底；`max_iterations` 硬上限由 `_decide` + driver `safetyMax`（`bin/commands/loop.js` `while(driven < safetyMax)`，`safetyMax = maxIters + 5`）双兜底，不会死循环。墙钟硬上限预检仍在 `_step` 保留。`test/runtime/test-loop-engine.js` 补末轮达成/未达成/墙钟兜底/首轮达成 + 移除预检后跑完整轮 iteration +1 等用例，全量零回归
+
+### Added
+
+- **Agentic Loop token-usage 端点元数据可观测性（WP-196 后续）**：executor 新增 `extractMetaFromClaudeStdout`，从 `claude -p --output-format json` 顶层 `{usage:{input_tokens,cache_read_input_tokens,output_tokens}, ttft_ms, duration_ms}` 字段级独立降级提取，贯穿 `CheckResult._executorTrace.tokenUsage / endpointMs` → `loop-trace.js` 一行式摘要行尾后缀（`TTFT <ms> · tok <in>→<out>`）。半数据（仅 ttft 或仅 usage）按 OR 条件正确填充，缺失降级 null 不阻断解析；限流 / spawn_failed / timeout 路径保持 null。`executor-claude.js` + `executor-default.js` 同步，`test/runtime/test-executor-claude.js` + `test-loop-trace.js` 补提取 / 半数据 / 后缀渲染用例
+- **真实链路 e2e smoke（`test/e2e/test-loop-executor-smoke.js`）**：补 CI 上 loop 真实 spawn 链路 0 覆盖盲区（runner 无 claude binary，既有 integration 真实冒烟全程 skip；全仓 e2e 此前仅 init / build / validate）。唯一替换 executor 的 `spawnFn`——spawn 真实 node 子进程经真实 stdin / stdout / close event 路径写受控 stdout（非伪造 child 对象），验证 driver 全链路 `plan-reader → engine init → while(step) → executor.run → lastChecklist 回填 → PROGRESS.md → achieved → exit 0`，以及 `passed=false` 持续收敛到 `terminated → exit 1`
+
+### Changed
+
+- **`skill-task-archive` 重写**：匹配新 `task.md` 结构（`📝 最近活动` 表 + `📊 快速概览` 单行进度串，单行可极长），兼容历史 `📋 待办工作包` 表。归档「最近活动」超保留窗口旧条目 + 进度行冗长详细描述到 `docs/archive/task-archive-YYYY-MM-DD.md`，task.md 保留精简骨架；强调 `docs/archive/` 入 git、非完成态行（🔄 进行中 / 📋 待执行）绝对不归档
+- **`.gitignore`**：补 `!docs/archive/` 例外，让归档文件入 git（覆盖 `docs/*` 忽略规则）
+- **文档同步对齐**：`docs/design/plugin-development.md` + `docs/design/best-practices.md` 插件统计更新为 26 个（17 Skill / 5 Provider / 2 Hook / 2 Validator）；`docs/design/agentic-loop-design.md` §6.5 / §6.6 + `skill-agentic-loop/skill.md` + `provider-loop-engine/index.js` JSDoc + `test-loop-engine.js` 注释统一为「达成 > 上限」优先级（命中 `_decide` 三处同步纪律，补 partial fix 遗漏）；`skill.md` 修正 `_think` / `_decide` / reflect 回填 / noFailed 的 index.js 行号引用漂移
+
 ## [0.3.14] - 2026-06-26
 
 ### Fixed

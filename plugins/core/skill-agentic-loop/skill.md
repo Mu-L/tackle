@@ -69,7 +69,7 @@
 | **Think** | 决策下一步（复现 engine `_think` 规则） | 本 skill 内置规则 | dispatch / retry / resplit / noop |
 | **Act** | **执行 WP + 重验 checklist（多 agent）** | `skill-agent-dispatcher`（implicit session team + subagent） | Step 4，委托 dispatcher，**loop 不写代码** |
 | **Reflect** | 收敛/发散/接近度评分（复现 engine `_decide`/evaluator 规则） | `skill-checklist`（机器可读 JSON）+ 本 skill 规则 | checklist 输出 CheckResult，按规则算 proximity |
-| **Decide** | 三类终止判定（复现 engine `_decide` 规则） | 本 skill 规则 | 熔断 > 发散 > 上限 > 达成 > 继续 |
+| **Decide** | 三类终止判定（复现 engine `_decide` 规则） | 本 skill 规则 | 熔断 > 发散 > 达成 > 上限 > 继续 |
 | **出口（P4）** | 达成后汇报 | `skill-completion-report` | 仅 achieved verdict 触发 |
 
 ---
@@ -271,7 +271,7 @@ while rounds < safetyMaxRounds:
 > **`failed` 的来源口径**（对齐 engine `_think` retry 分支 + loop-snapshot `buildWorkPackages`，WP-176-2）：
 > `workPackages.failed` 不是凭空写出，而是由 `lastChecklist.failedItems` 聚合——把每条失败项的 `wpId` 去重后得到待重试的 WP 列表（排除已 `completed`、限定 `goal.wpIds` 范围）。这样 `_think` 的 `wp.failed.length > 0` 才能真实命中 retry（修复偏差1：原先 failed 写死空数组 → retry 永远走不到）。运行时 Claude 聚合时同理：从上轮 CheckResult.failedItems 取 wpId 集合作为 `failed`。
 
-#### Step 3b: Think 规则（复现 engine `_think`，`provider-loop-engine/index.js:621-688`）
+#### Step 3b: Think 规则（复现 engine `_think`，`provider-loop-engine/index.js:913-980`）
 优先级：**失败项重试 > 待执行调度 > 被阻塞 noop**
 1. 若有 `failed` WP（`wp.failed` 非空，见 Step 3a 来源口径）→ `retry`：
    - `targetWp = wp.failed[0]`（首个失败 WP）
@@ -292,22 +292,22 @@ while rounds < safetyMaxRounds:
 
 > **`failingDrivers` refine 通道（完整流转，修复偏差2）**——engine 路径与运行时复现必须打通同一条链路：
 > 1. **产出**：Reflect 把 `lastChecklist.failedItems` 归一化为 `failingDrivers`（写入 `EvalResult.failingDrivers`）。
-> 2. **回填 state**（engine `reflect` 阶段，`provider-loop-engine/index.js:413-414`）：`state.failingDrivers = evalResult.failingDrivers || []`、`state.divergenceStreak = evalResult.divergenceStreak`。运行时 Claude 等效地把它记到本轮 PROGRESS.md / state 记录里，供下轮读取。
+> 2. **回填 state**（engine `reflect` 阶段，`provider-loop-engine/index.js:585-586`）：`state.failingDrivers = evalResult.failingDrivers || []`、`state.divergenceStreak = evalResult.divergenceStreak`。运行时 Claude 等效地把它记到本轮 PROGRESS.md / state 记录里，供下轮读取。
 > 3. **下轮 Think 消费**（Step 3b）：retry decision 携带 `decision.failingDrivers`（优先 `state.failingDrivers`，回退 `state.lastEval.failingDrivers`）。
 > 4. **进入 Step 4.2**：把 `decision.failingDrivers` 映射进 `dispatchTarget.failingDrivers`。
 > 5. **dispatcher → 重做 Teamee**（WP-176-6）：dispatcher restart 创建新 Teamee 时把 `failingDrivers` 注入 prompt，Teamee 据此优先修复这些失败项。
 >
 > 缺第 2 步（回填）或第 4 步（进 dispatcher 参数）都会让链路断裂——这正是偏差1/偏差2 的根因：数据算出来了但没流到重做者手里。
 
-#### Step 3d: Decide 规则（复现 engine `_decide`，`provider-loop-engine/index.js:699-751`）
-优先级 **熔断 > 发散 > 上限 > 达成 > 继续**：
+#### Step 3d: Decide 规则（复现 engine `_decide`，`provider-loop-engine/index.js:993-1059`）
+优先级 **熔断 > 发散 > 达成 > 上限 > 继续**（「达成」上提到「上限」之前——修复末轮 `iteration==max_iterations` 时 proximity 已达标却被抢判 `timeout` 的 bug：末轮达标应判 `achieved`，未达标才判 `timeout` 兜底）：
 1. **熔断**：watchdog/守护异常（terminated / 持续 degraded）→ `circuit_broken`（运行时若 dispatcher 监控报告守护异常即触发）
 2. **发散**：`divergenceStreak >= divergence_threshold` → `diverged`
-3. **上限**：`iteration >= max_iterations`、墙钟超 `max_wall_time_ms`、或单轮时长超 `max_round_time_ms` → `timeout`
-4. **达成**：`allPassed && proximity >= proximity_goal && noPending && noFailed` → `achieved`
+3. **达成**：`allPassed && proximity >= proximity_goal && noPending && noFailed` → `achieved`
+4. **上限**：`iteration >= max_iterations`、墙钟超 `max_wall_time_ms`、或单轮时长超 `max_round_time_ms` → `timeout`（兜底：本轮未达成才判 timeout）
 5. 否则 → `continue`
 
-> **`noFailed` 现真实生效**（修复偏差1 + 落差，engine `_decide:742-743`）：`noFailed = (!wp.failed || wp.failed.length===0) && (!evalResult.failingDrivers || evalResult.failingDrivers.length===0)`。即 WP 级 failed 列表与 CheckResult 级 failingDrivers 明细**任一非空**都判为"仍有失败项"，不能进 `achieved`。运行时 Claude 复现时须同时检查这两个来源，不可只看 `wp.failed`。
+> **`noFailed` 现真实生效**（修复偏差1 + 落差，engine `_decide:1041-1042`）：`noFailed = (!wp.failed || wp.failed.length===0) && (!evalResult.failingDrivers || evalResult.failingDrivers.length===0)`。即 WP 级 failed 列表与 CheckResult 级 failingDrivers 明细**任一非空**都判为"仍有失败项"，不能进 `achieved`。运行时 Claude 复现时须同时检查这两个来源，不可只看 `wp.failed`。
 
 ### Step 4: Act 集成（🔴 委托 dispatcher implicit session team 多 agent，loop 不写代码）
 
@@ -525,7 +525,7 @@ for rounds in 0..50:                              # 外层保险
     decision  = think(snapshot)                   # Step 3b：复现 engine _think（retry>dispatch>noop）
     checklistResult = act(decision)               # Step 4：🔴 委托 dispatcher implicit session team 多 agent 执行
     evalResult = reflect(snapshot, checklistResult)  # Step 3c：复现 evaluator（proximity/发散）
-    verdict   = decide(evalResult, snapshot)      # Step 3d：复现 engine _decide（熔断>发散>上限>达成>继续）
+    verdict   = decide(evalResult, snapshot)      # Step 3d：复现 engine _decide（熔断>发散>达成>上限>继续）
     record(iteration, verdict, evalResult.proximity)  # progress-tracker 写 history
     if verdict == 'continue': continue
     finalVerdict = verdict

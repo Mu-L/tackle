@@ -175,6 +175,43 @@ function extractTextFromClaudeStdout(stdout) {
 }
 
 /**
+ * 从 Claude stdout（--output-format json）提取 usage / ttft_ms / duration_ms 等端点元数据。
+ * 与 extractTextFromClaudeStdout 并列（不改其签名——已有调用方/测试断言返回 string），单独抽取
+ * 顶层同层的 usage / ttft_ms / duration_ms。claude -p --output-format json 顶层结构：
+ *   { type:"result", result:"...", duration_ms, ttft_ms,
+ *     usage:{ input_tokens, cache_read_input_tokens, output_tokens } }
+ * 缺失或解析失败时对应字段降级为 null（不抛）——限流/spawn_failed/timeout 路径不调用本函数（保持 null）。
+ *
+ * @param {string} stdout
+ * @returns {{usage:{input:number,cacheRead:number,output:number}|null, ttftMs:number|null, durationMs:number|null}}
+ */
+function extractMetaFromClaudeStdout(stdout) {
+  var empty = { usage: null, ttftMs: null, durationMs: null };
+  if (!stdout) return empty;
+  var trimmed = stdout.trim();
+  try {
+    var parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== 'object') return empty;
+    var usage = null;
+    if (parsed.usage && typeof parsed.usage === 'object') {
+      usage = {
+        input: (typeof parsed.usage.input_tokens === 'number') ? parsed.usage.input_tokens : null,
+        cacheRead: (typeof parsed.usage.cache_read_input_tokens === 'number')
+          ? parsed.usage.cache_read_input_tokens : null,
+        output: (typeof parsed.usage.output_tokens === 'number') ? parsed.usage.output_tokens : null,
+      };
+    }
+    return {
+      usage: usage,
+      ttftMs: (typeof parsed.ttft_ms === 'number') ? parsed.ttft_ms : null,
+      durationMs: (typeof parsed.duration_ms === 'number') ? parsed.duration_ms : null,
+    };
+  } catch (_e) {
+    return empty;
+  }
+}
+
+/**
  * 从 Report 文本提取 json:machine-readable fenced block 并 JSON.parse（skill-checklist 契约）。
  * 标记是 `json:machine-readable`（冒号，非连字符）—— 见 test-checklist-json-contract.js:68。
  * 解析失败返回 null（调用方降级为「无法解析」CheckResult）。
@@ -429,7 +466,7 @@ function buildClaudeArgs(allowedTools, settingsPath) {
  * 下划线前缀 `_executorTrace` 表示内部观测字段，reflection-evaluator 不消费；
  * driver 读取后聚合到 round record。全程 try/catch 降级。
  * @param {object} checkResult
- * @param {object} trace { spawnMs, exitCode, timedOut, rateLimited, tokenUsage }
+ * @param {object} trace { spawnMs, exitCode, timedOut, rateLimited, tokenUsage, endpointMs }
  * @returns {object} 原 checkResult（附 _executorTrace）
  */
 function withExecutorTrace(checkResult, trace) {
@@ -471,10 +508,10 @@ function createExecutor(opts) {
     pendingAction = pendingAction || {};
     var wpId = pendingAction.wpId || 'unknown';
 
-    // WP-196-1-impl：executor.run 打点（仅观测，不引入 provider 分支）。
-    //   采集 {spawnMs, exitCode, timedOut, rateLimited} 附在 checkResult._executorTrace。
-    //   tokenUsage 当前不可获取（claude CLI 不稳定暴露），留 null。
-    var trace = { spawnMs: null, exitCode: null, timedOut: false, rateLimited: false, tokenUsage: null };
+    // WP-196-1-impl / token-usage：executor.run 打点（仅观测，不引入 provider 分支）。
+    //   采集 {spawnMs, exitCode, timedOut, rateLimited, tokenUsage, endpointMs} 附在 checkResult._executorTrace。
+    //   tokenUsage/endpointMs 在 close 回调由 extractMetaFromClaudeStdout 填充；限流/失败路径保持 null。
+    var trace = { spawnMs: null, exitCode: null, timedOut: false, rateLimited: false, tokenUsage: null, endpointMs: null };
     var spawnStartMs = Date.now();
 
     // 限流
@@ -564,6 +601,15 @@ function createExecutor(opts) {
         }
         // 提取 text → 解析 checklist block
         var text = extractTextFromClaudeStdout(stdoutBuf);
+        // token-usage：提取端点元数据（usage/ttft/duration），失败降级 null（不阻断解析）
+        try {
+          var meta = extractMetaFromClaudeStdout(stdoutBuf);
+          trace.tokenUsage = meta.usage;
+          // 仅当提取到至少一个端点时序时才设 endpointMs，否则保持 null（语义：无端点数据）
+          if (meta.ttftMs !== null || meta.durationMs !== null) {
+            trace.endpointMs = { ttft: meta.ttftMs, duration: meta.durationMs };
+          }
+        } catch (_me) { /* 元数据提取降级：保持 null */ }
         var raw = parseCheckResult(text);
         var chk = normalizeCheckResult(raw, wpId);
 
@@ -595,6 +641,7 @@ module.exports = {
   _buildPrompt: buildPrompt,
   _buildClaudeArgs: buildClaudeArgs,
   _extractTextFromClaudeStdout: extractTextFromClaudeStdout,
+  _extractMetaFromClaudeStdout: extractMetaFromClaudeStdout,
   _parseCheckResult: parseCheckResult,
   _normalizeCheckResult: normalizeCheckResult,
   _buildFailedChecklist: buildFailedChecklist,

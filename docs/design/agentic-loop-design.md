@@ -733,7 +733,7 @@ verdict: "continue"
 
 ### 6.5 判定优先级与短路
 
-熔断 > 发散 > 上限 > 达成 > 继续。任一终止条件触发立即跳出 while，**不**继续执行剩余 phase。
+熔断 > 发散 > 达成 > 上限 > 继续。任一终止条件触发立即跳出 while，**不**继续执行剩余 phase。（「达成」优先于「上限」：末轮 `iteration==max_iterations` 时若 proximity 已达标判 `achieved` 而非 `timeout`，避免目标已达成却报失败——与 §6.1（①目标达成）/§6.2（②迭代上限）的节编号顺序一致。）
 
 ### 6.6 出口报告行为（WP-177-2-impl-c，行为变更）
 
@@ -753,7 +753,7 @@ report = {
 
 **生成时机（engine 内聚，所有终态出口统一经 `_generateTerminalReport`）**：
 - `decide()` 判出 timeout/diverged/circuit_broken → 即时生成（但此时 history 缺本轮，`step()` 在写完本轮 history 后对三类终态**重新生成覆盖**，使 `proximityTrend` 含末轮）；
-- `step()` 提前硬上限出口（iteration/wall/单轮超时）→ 生成；
+- `step()` 提前硬上限出口（墙钟/单轮超时）→ 生成；（iteration 上限已下沉到 `_decide` 兜底，见 §6.5）
 - `achieved` 不生成（走 completion）。
 
 **降级语义**：`loop-report` require 失败 → `terminalReport = {degraded:true, verdict, markdown:null}` 并 `console.warn`，不抛、不阻断终态流转，state 仍标记终态 status。
@@ -912,7 +912,7 @@ skill-agentic-loop 注册为 skill（version 1.1.0，config 含 plan_mode_requir
 - checklist 修改：在 `skill-checklist/skill.md` Report Template（`:103-124`）末尾加 JSON block（5.4.2），**不动现有表格**。Act 阶段（loop-engine.act）把 checklist 输出解析后写 `loop.{loopId}.lastChecklist`。
 
 ### WP-174-5（impl-converge）实现提示
-- 终止判定严格按 §6 优先级（熔断 > 发散 > 上限 > 达成 > 继续）。
+- 终止判定严格按 §6 优先级（熔断 > 发散 > 达成 > 上限 > 继续）。
 - 多 loop 协调**复用** `multi-window-coordinator.aggregateWindowStates`（`:157`），把 loop 当逻辑窗口。
 - watchdog 熔断查 `context.getProvider('provider:watchdog').isRunning()`（`provider-watchdog/index.js:77`）。
 
@@ -926,7 +926,7 @@ skill-agentic-loop 注册为 skill（version 1.1.0，config 含 plan_mode_requir
 - engine 状态机五方法 + step 编排。
 - snapshot 聚合（含单源失败的降级）。
 - evaluator 评分（proximity/converged/diverged/trend）+ 三类阈值边界。
-- 终止判定优先级（熔断 > 发散 > 上限 > 达成）。
+- 终止判定优先级（熔断 > 发散 > 达成 > 上限）。
 - **持久化恢复**：模拟上下文压缩（清内存），init 必须恢复 iteration/history/phase。
 - checklist 机器可读输出解析 + 向后兼容（Markdown 不被破坏）。
 - item.id 跨轮稳定性。

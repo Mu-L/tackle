@@ -459,6 +459,109 @@ test('_extractTextFromClaudeStdout：非 JSON 降级原样返回', function () {
   assert.strictEqual(t, 'plain text output');
 });
 
+// -------------------------------------------------------------------------
+// token-usage：_extractMetaFromClaudeStdout（WP-196 后续，与 _extractText 并列不改其签名）
+// -------------------------------------------------------------------------
+test('_extractMetaFromClaudeStdout：含 usage/ttft/duration → 提取', function () {
+  var meta = executorClaude._extractMetaFromClaudeStdout(JSON.stringify({
+    type: 'result', result: 'x',
+    duration_ms: 9970, ttft_ms: 9966,
+    usage: { input_tokens: 25380, cache_read_input_tokens: 100, output_tokens: 3 },
+  }));
+  assert.ok(meta.usage);
+  assert.strictEqual(meta.usage.input, 25380);
+  assert.strictEqual(meta.usage.cacheRead, 100);
+  assert.strictEqual(meta.usage.output, 3);
+  assert.strictEqual(meta.ttftMs, 9966);
+  assert.strictEqual(meta.durationMs, 9970);
+});
+
+test('_extractMetaFromClaudeStdout：无 usage 字段 → 全 null（降级不抛）', function () {
+  var meta = executorClaude._extractMetaFromClaudeStdout(JSON.stringify({ type: 'result', result: 'x' }));
+  assert.strictEqual(meta.usage, null);
+  assert.strictEqual(meta.ttftMs, null);
+  assert.strictEqual(meta.durationMs, null);
+});
+
+test('_extractMetaFromClaudeStdout：非 JSON / 空输入 → 全 null', function () {
+  var m1 = executorClaude._extractMetaFromClaudeStdout('not json');
+  assert.strictEqual(m1.usage, null);
+  assert.strictEqual(m1.durationMs, null);
+  var m2 = executorClaude._extractMetaFromClaudeStdout('');
+  assert.strictEqual(m2.usage, null);
+  assert.strictEqual(m2.ttftMs, null);
+});
+
+test('_extractMetaFromClaudeStdout：仅 ttft_ms 无 duration_ms → ttftMs 有值 / durationMs null', function () {
+  var meta = executorClaude._extractMetaFromClaudeStdout(JSON.stringify({
+    type: 'result', result: 'x', ttft_ms: 9966,
+  }));
+  assert.strictEqual(meta.ttftMs, 9966);
+  assert.strictEqual(meta.durationMs, null);
+  assert.strictEqual(meta.usage, null);
+});
+
+test('_extractMetaFromClaudeStdout：仅 duration_ms 无 ttft_ms → durationMs 有值 / ttftMs null', function () {
+  var meta = executorClaude._extractMetaFromClaudeStdout(JSON.stringify({
+    type: 'result', result: 'x', duration_ms: 9970,
+  }));
+  assert.strictEqual(meta.durationMs, 9970);
+  assert.strictEqual(meta.ttftMs, null);
+});
+
+test('_extractMetaFromClaudeStdout：usage 缺个别字段 → 缺失侧降 null 其余保留（字段级独立降级）', function () {
+  var meta = executorClaude._extractMetaFromClaudeStdout(JSON.stringify({
+    type: 'result', result: 'x',
+    usage: { input_tokens: 100, output_tokens: 3 }, // 缺 cache_read_input_tokens
+  }));
+  assert.strictEqual(meta.usage.input, 100);
+  assert.strictEqual(meta.usage.output, 3);
+  assert.strictEqual(meta.usage.cacheRead, null);
+});
+
+test('_extractMetaFromClaudeStdout：input_tokens=0 → 保留 0 不降级为 null（typeof 0===number）', function () {
+  var meta = executorClaude._extractMetaFromClaudeStdout(JSON.stringify({
+    type: 'result', result: 'x',
+    usage: { input_tokens: 0, output_tokens: 0 },
+  }));
+  assert.strictEqual(meta.usage.input, 0);
+  assert.strictEqual(meta.usage.output, 0);
+});
+
+test('token-usage：run() 半数据（仅 ttft 无 duration）→ endpointMs 仍填充（OR 条件），缺失侧 null', async function () {
+  var checkResult = { wpId: 'WP-1', passed: true, summary: { total: 1, passed: 1, failed: 0 } };
+  var text = '执行完成。\n```json:machine-readable\n' + JSON.stringify(checkResult, null, 2) + '\n```\n';
+  var stdout = JSON.stringify({
+    type: 'result', result: text, ttft_ms: 9966,
+    usage: { input_tokens: 25380, output_tokens: 3 },
+  });
+  var fakeSpawn = makeFakeSpawn({ stdout: stdout, exitCode: 0 });
+  var exec = createExecutor({ spawnFn: fakeSpawn, projectRoot: process.cwd() });
+  var result = await exec.run(makePending('WP-1'));
+  // endpointMs 仅需 ttft 或 duration 任一非 null 即设（OR 条件，防误写成 AND 丢弃半数据）
+  assert.ok(result._executorTrace.endpointMs, '半数据下 endpointMs 仍填充（OR 条件成立）');
+  assert.strictEqual(result._executorTrace.endpointMs.ttft, 9966);
+  assert.strictEqual(result._executorTrace.endpointMs.duration, null);
+});
+
+test('token-usage：run() fake spawn 带 usage → _executorTrace.tokenUsage/endpointMs 填充', async function () {
+  var checkResult = { wpId: 'WP-1', passed: true, summary: { total: 1, passed: 1, failed: 0 } };
+  var text = '执行完成。\n```json:machine-readable\n' + JSON.stringify(checkResult, null, 2) + '\n```\n';
+  var stdout = JSON.stringify({
+    type: 'result', result: text, duration_ms: 9970, ttft_ms: 9966,
+    usage: { input_tokens: 25380, cache_read_input_tokens: 0, output_tokens: 3 },
+  });
+  var fakeSpawn = makeFakeSpawn({ stdout: stdout, exitCode: 0 });
+  var exec = createExecutor({ spawnFn: fakeSpawn, projectRoot: process.cwd() });
+  var result = await exec.run(makePending('WP-1'));
+  assert.ok(result._executorTrace.tokenUsage, 'executor-claude close 回调填充 tokenUsage');
+  assert.strictEqual(result._executorTrace.tokenUsage.input, 25380);
+  assert.strictEqual(result._executorTrace.tokenUsage.output, 3);
+  assert.ok(result._executorTrace.endpointMs, 'endpointMs 填充');
+  assert.strictEqual(result._executorTrace.endpointMs.ttft, 9966);
+  assert.strictEqual(result._executorTrace.endpointMs.duration, 9970);
+});
+
 test('_parseCheckResult：含 block 解析成功', function () {
   var text = '前缀\n```json:machine-readable\n{"wpId":"WP-1","passed":true}\n```\n后缀';
   var chk = executorClaude._parseCheckResult(text);

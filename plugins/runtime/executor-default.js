@@ -42,6 +42,7 @@ var claudeInternals = require('./executor-claude');
 var buildPrompt = claudeInternals._buildPrompt;
 var buildClaudeArgs = claudeInternals._buildClaudeArgs;
 var extractTextFromClaudeStdout = claudeInternals._extractTextFromClaudeStdout;
+var extractMetaFromClaudeStdout = claudeInternals._extractMetaFromClaudeStdout;
 var parseCheckResult = claudeInternals._parseCheckResult;
 var normalizeCheckResult = claudeInternals._normalizeCheckResult;
 var buildFailedChecklist = claudeInternals._buildFailedChecklist;
@@ -185,7 +186,7 @@ function buildDefaultArgs(allowedTools, settingsPath, model) {
  * 下划线前缀字段 `_executorTrace` 表示内部观测，reflection-evaluator 不消费；
  * driver 读取后聚合到 round record。全程 try/catch 降级——trace 缺失不影响 checkResult。
  * @param {object} checkResult
- * @param {object} trace { spawnMs, exitCode, timedOut, rateLimited, tokenUsage }
+ * @param {object} trace { spawnMs, exitCode, timedOut, rateLimited, tokenUsage, endpointMs }
  * @returns {object} 原 checkResult（附 _executorTrace）
  */
 function _withTrace(checkResult, trace) {
@@ -262,10 +263,10 @@ function createExecutor(opts) {
     pendingAction = pendingAction || {};
     var wpId = pendingAction.wpId || 'unknown';
 
-    // WP-196-1-impl：executor.run 打点（仅观测，不引入 provider 分支）。
-    //   采集 {spawnMs, exitCode, timedOut, rateLimited} 附在 checkResult._executorTrace；
-    //   全程容错，缺失字段降级为 null。tokenUsage 当前不可获取（claude CLI 不稳定暴露），留 null。
-    var trace = { spawnMs: null, exitCode: null, timedOut: false, rateLimited: false, tokenUsage: null };
+    // WP-196-1-impl / token-usage：executor.run 打点（仅观测，不引入 provider 分支）。
+    //   采集 {spawnMs, exitCode, timedOut, rateLimited, tokenUsage, endpointMs} 附在 checkResult._executorTrace；
+    //   全程容错，缺失字段降级为 null。tokenUsage/endpointMs 在 close 回调由 extractMetaFromClaudeStdout 填充。
+    var trace = { spawnMs: null, exitCode: null, timedOut: false, rateLimited: false, tokenUsage: null, endpointMs: null };
     var spawnStartMs = Date.now();
 
     // 限流（与 executor-claude 一致，所有 provider 共用）
@@ -371,6 +372,15 @@ function createExecutor(opts) {
         }
         // 提取 text → 解析 checklist block（复用 executor-claude 解析）
         var text = extractTextFromClaudeStdout(stdoutBuf);
+        // token-usage：提取端点元数据（复用 executor-claude 的 extractMeta），失败降级 null
+        try {
+          var meta = extractMetaFromClaudeStdout(stdoutBuf);
+          trace.tokenUsage = meta.usage;
+          // 仅当提取到至少一个端点时序时才设 endpointMs，否则保持 null（语义：无端点数据）
+          if (meta.ttftMs !== null || meta.durationMs !== null) {
+            trace.endpointMs = { ttft: meta.ttftMs, duration: meta.durationMs };
+          }
+        } catch (_me) { /* 元数据提取降级：保持 null */ }
         var raw = parseCheckResult(text);
         var chk = normalizeCheckResult(raw, wpId);
 

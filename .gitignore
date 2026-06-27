@@ -18,6 +18,7 @@ CLAUDE.md
 # Docs
 docs/*
 !docs/design/
+!docs/archive/
 # task.md 是项目主规划文档，必须保持 git 跟踪以防误删。
 # 切勿对它执行 `git rm`/`git rm --cached`，也不要在 .gitignore 中忽略它。
 

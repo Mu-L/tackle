@@ -13,7 +13,7 @@
  *   - observe/reflect 委托 loop-snapshot / reflection-evaluator（WP-174-3）；
  *     未注入 delegate 时降级为最小可用实现，保证状态流转完整。
  *   - act 委托 agent-dispatcher（WP-174-4 注入），此处留占位接口。
- *   - decide 实现三类终止判定优先级：熔断 > 发散 > 上限 > 达成 > 继续（design.md §6）。
+ *   - decide 实现三类终止判定优先级：熔断 > 发散 > 达成 > 上限 > 继续（design.md §6）。
  *
  * Capabilities（factory 返回）：
  *   - init(opts)                 初始化/恢复 loop 运行
@@ -590,7 +590,7 @@ class LoopEngineProvider extends ProviderPlugin {
       },
 
       /**
-       * Decide 阶段：三类终止判定（design.md §6，优先级 熔断>发散>上限>达成>继续）。
+       * Decide 阶段：三类终止判定（design.md §6，优先级 熔断>发散>达成>上限>继续）。
        * @param {string} loopId
        * @param {object} evalResult
        * @returns {Promise<{ verdict: string, reason: string }>}
@@ -648,22 +648,12 @@ class LoopEngineProvider extends ProviderPlugin {
           };
         }
 
-        // 单轮开始前先检查硬上限（避免无谓推进）
+        // 单轮开始前先检查墙钟硬上限。
+        //   iteration 上限改由 _decide 在轮末统一判定（修复末轮达成被误判 timeout 的 bug）：
+        //   预检在 iteration 递增前、拿不到本轮 evalResult，无法判本轮是否达成；放行让 _decide
+        //   用最新 evalResult 判——达成则 achieved、未达成才 timeout（兜底）。max_iterations 硬上限
+        //   由 _decide + driver safetyMax 双兜底，不会死循环。
         var wallElapsed = Date.now() - new Date(state.startedAt).getTime();
-        if (state.iteration >= self._config.max_iterations) {
-          var iterVerdict = { verdict: 'timeout', reason: '迭代上限已达 max_iterations' };
-          state.status = 'timeout';
-          state.lastVerdict = iterVerdict;
-          // WP-177-2-impl-c：提前 timeout 出口也自主生成报告（不经 decide）
-          self._generateTerminalReport(state, iterVerdict);
-          await saveState(state);
-          return {
-            verdict: 'timeout',
-            iteration: state.iteration,
-            state: state,
-            report: state.terminalReport || null,
-          };
-        }
         if (wallElapsed >= self._config.max_wall_time_ms) {
           var wallVerdict = { verdict: 'timeout', reason: '墙钟上限已达 max_wall_time_ms' };
           state.status = 'timeout';
@@ -991,7 +981,9 @@ class LoopEngineProvider extends ProviderPlugin {
 
   /**
    * Decide 核心逻辑：三类终止判定。
-   * 优先级（design.md §6.5）：熔断 > 发散 > 上限 > 达成 > 继续。
+   * 优先级：熔断 > 发散 > 达成 > 上限 > 继续。
+   *   （「达成」上提到「上限」之前——修复末轮 iteration==max_iterations 时 proximity 已达标
+   *    却被 max_iterations 抢判 timeout 的 bug；末轮达成本轮应判 achieved。）
    * @private
    * @param {object} state
    * @param {object} evalResult
@@ -1033,16 +1025,10 @@ class LoopEngineProvider extends ProviderPlugin {
       };
     }
 
-    // ③ 迭代上限 / 墙钟上限（design.md §6.2）
-    if (state.iteration >= this._config.max_iterations) {
-      return { verdict: 'timeout', reason: '迭代已达上限 max_iterations ' + this._config.max_iterations };
-    }
-    var wallElapsed = Date.now() - new Date(state.startedAt).getTime();
-    if (wallElapsed >= this._config.max_wall_time_ms) {
-      return { verdict: 'timeout', reason: '墙钟已达上限 max_wall_time_ms ' + this._config.max_wall_time_ms };
-    }
-
-    // ④ 目标达成（checklist 全过 + proximity 达标 + 无 pending/failed，design.md §6.1）
+    // ③ 目标达成（checklist 全过 + proximity 达标 + 无 pending/failed，design.md §6.1）
+    //    优先级上提到「上限」之前（修复末轮达成被误判 timeout 的 bug）：末轮
+    //    iteration==max_iterations 时若 proximity 已达标，应判 achieved 而非 timeout——
+    //    目标已达成却报失败违背「目标驱动 self-closing loop」根本语义。
     //    noFailed 现真实生效（修复偏差1 + 落差）：wp.failed 由 WP-176-2 填充，
     //    evalResult.failingDrivers 由 evaluator 从 lastChecklist.failedItems 算出。
     //    二者任一非空都意味着仍有失败项 → 不能判 achieved。
@@ -1057,6 +1043,15 @@ class LoopEngineProvider extends ProviderPlugin {
     if (allPassed && proximity >= this._config.proximity_goal && noPending && noFailed) {
       return { verdict: 'achieved', reason: 'checklist 全过且 proximity ' + proximity.toFixed(3) +
         ' >= goal ' + this._config.proximity_goal };
+    }
+
+    // ④ 迭代上限 / 墙钟上限（design.md §6.2）—— 兜底：本轮未达成才判 timeout
+    if (state.iteration >= this._config.max_iterations) {
+      return { verdict: 'timeout', reason: '迭代已达上限 max_iterations ' + this._config.max_iterations };
+    }
+    var wallElapsed = Date.now() - new Date(state.startedAt).getTime();
+    if (wallElapsed >= this._config.max_wall_time_ms) {
+      return { verdict: 'timeout', reason: '墙钟已达上限 max_wall_time_ms ' + this._config.max_wall_time_ms };
     }
 
     // ⑤ 继续

@@ -397,6 +397,46 @@ test.describe('WP-196-2-test 维度2: executor.run 打点', function () {
     // 限流路径不应 spawn（calls 仍为 1）
     assert.equal(fakeSpawn.calls.length, 1, '限流时不 spawn');
   });
+
+  // -------------------------------------------------------------------------
+  // token-usage：claude stdout 顶层 usage/ttft_ms/duration_ms 提取（WP-196 后续）
+  // -------------------------------------------------------------------------
+  test('token-usage：stdout 含 usage/ttft/duration → _executorTrace 填充 tokenUsage + endpointMs', async function () {
+    var checkResult = { wpId: 'WP-1', passed: true, summary: { total: 1, passed: 1, failed: 0 } };
+    var text = '执行完成。\n```json:machine-readable\n' + JSON.stringify(checkResult, null, 2) + '\n```\n';
+    // 对齐真实 claude -p --output-format json 顶层结构（附录实测值）
+    var stdout = JSON.stringify({
+      type: 'result',
+      result: text,
+      duration_ms: 9970,
+      ttft_ms: 9966,
+      usage: { input_tokens: 25380, cache_read_input_tokens: 0, output_tokens: 3 },
+    });
+    var fakeSpawn = makeFakeSpawn({ stdout: stdout, exitCode: 0 });
+    var exec = executorDefault.createExecutor({ spawnFn: fakeSpawn, projectRoot: process.cwd() });
+    var result = await exec.run(makePending('WP-1'));
+
+    var t = result._executorTrace;
+    assert.ok(t.tokenUsage, 'tokenUsage 已提取');
+    assert.equal(t.tokenUsage.input, 25380, 'input_tokens 提取');
+    assert.equal(t.tokenUsage.output, 3, 'output_tokens 提取');
+    assert.equal(t.tokenUsage.cacheRead, 0, 'cache_read_input_tokens 提取');
+    assert.ok(t.endpointMs, 'endpointMs 已提取');
+    assert.equal(t.endpointMs.ttft, 9966, 'ttft_ms 提取');
+    assert.equal(t.endpointMs.duration, 9970, 'duration_ms 提取');
+  });
+
+  test('token-usage：stdout 无 usage → tokenUsage/endpointMs 保持 null（降级不抛）', async function () {
+    // makeClaudeStdout 产出的 stdout 顶层只有 type+result，无 usage/ttft/duration
+    var fakeSpawn = makeFakeSpawn({
+      stdout: makeClaudeStdout({ wpId: 'WP-1', passed: true, summary: { total: 1, passed: 1, failed: 0 } }),
+      exitCode: 0,
+    });
+    var exec = executorDefault.createExecutor({ spawnFn: fakeSpawn, projectRoot: process.cwd() });
+    var result = await exec.run(makePending('WP-1'));
+    assert.equal(result._executorTrace.tokenUsage, null, '无 usage → tokenUsage=null');
+    assert.equal(result._executorTrace.endpointMs, null, '无 endpoint meta → endpointMs=null');
+  });
 });
 
 // ===========================================================================
@@ -772,6 +812,80 @@ test.describe('WP-196-2-test 维度5: 一行式阶段摘要', function () {
     var line = loopTrace.renderOneLine(rec);
     // spawnMs=null 不触发合并，Act 保持 act.elapsedMs=3000（向后兼容既有行为）
     assert.match(line, /Act 3000ms/);
+  });
+
+  // -------------------------------------------------------------------------
+  // token-usage：renderOneLine 行尾端点元数据后缀（WP-196 后续）
+  // -------------------------------------------------------------------------
+  test('token-usage 后缀：executor 含 tokenUsage/endpointMs → 行尾显示 TTFT + tok', function () {
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-meta',
+      iteration: 1,
+      phases: [
+        { phase: 'observe', elapsedMs: 8 },
+        { phase: 'think', elapsedMs: 2 },
+        { phase: 'act', elapsedMs: 4 },
+        { phase: 'reflect', elapsedMs: 2 },
+        { phase: 'decide', elapsedMs: 2 },
+      ],
+      executorTrace: {
+        spawnMs: 90754, exitCode: 0, timedOut: false, rateLimited: false,
+        tokenUsage: { input: 25380, cacheRead: 0, output: 3 },
+        endpointMs: { ttft: 9966, duration: 9970 },
+      },
+      verdict: 'continue',
+      dispatchedWp: 'WP-META',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    assert.match(line, /TTFT 9966ms/, '行尾显示 TTFT');
+    assert.match(line, /tok 25380→3/, '行尾显示 token in→out');
+    assert.match(line, /→ dispatch WP-META/, 'dispatch 后缀仍在');
+  });
+
+  test('token-usage 后缀：executor 无 tokenUsage/endpointMs → 不显示后缀（保持五段式视觉）', function () {
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-no-meta',
+      iteration: 1,
+      phases: [{ phase: 'observe', elapsedMs: 5 }, { phase: 'act', elapsedMs: 100 }],
+      executorTrace: { spawnMs: 100, exitCode: 0, timedOut: false, rateLimited: false, tokenUsage: null, endpointMs: null },
+      verdict: 'continue',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    assert.equal(/TTFT/.test(line), false, '无 endpointMs → 不显示 TTFT');
+    assert.equal(/tok /.test(line), false, '无 tokenUsage → 不显示 tok');
+  });
+
+  test('token-usage 后缀：半数据（input 有 / output null）→ tok 25380→? (? 占位)', function () {
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-half-tok-in',
+      iteration: 1,
+      phases: [{ phase: 'observe', elapsedMs: 5 }, { phase: 'act', elapsedMs: 100 }],
+      executorTrace: {
+        spawnMs: 100, exitCode: 0, timedOut: false, rateLimited: false,
+        tokenUsage: { input: 25380, output: null },
+        endpointMs: null,
+      },
+      verdict: 'continue',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    // 单边降级：input 是 number、output 非 number → 显示 tok 25380→?（? 占位，防 || 误写成 &&）
+    assert.match(line, /tok 25380→\?/, 'output 缺失用 ? 占位');
+  });
+
+  test('token-usage 后缀：半数据（output 有 / input null）→ tok ?→3', function () {
+    var rec = loopTrace.buildRoundRecord({
+      loopId: 'loop-half-tok-out',
+      iteration: 1,
+      phases: [{ phase: 'observe', elapsedMs: 5 }, { phase: 'act', elapsedMs: 100 }],
+      executorTrace: {
+        spawnMs: 100, exitCode: 0, timedOut: false, rateLimited: false,
+        tokenUsage: { input: null, output: 3 },
+        endpointMs: null,
+      },
+      verdict: 'continue',
+    });
+    var line = loopTrace.renderOneLine(rec);
+    assert.match(line, /tok \?→3/, 'input 缺失用 ? 占位');
   });
 });
 

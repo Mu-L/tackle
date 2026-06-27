@@ -180,7 +180,7 @@ production:
       node_modules/
         tackle-harness/           # 全局安装位置
           plugins/
-            core/                  # 23 个插件
+            core/                  # 26 个插件（17 Skill / 5 Provider / 2 Hook / 2 Validator）
           ...
 
 project-a/

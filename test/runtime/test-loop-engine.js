@@ -7,7 +7,7 @@
  *   - step 单步编排（iteration 单调递增）
  *   - applyDirective（pause/abort/abort_all）
  *   - inject 注入路径（注入走 delegate，未注入走 fallback）
- *   - _decide 终止判定优先级（熔断 > 发散 > 上限 > 达成 > 继续）
+ *   - _decide 终止判定优先级（熔断 > 发散 > 达成 > 上限 > 继续）
  *   - 持久化恢复（模拟上下文压缩：新 store 读回断点）
  */
 
@@ -619,7 +619,7 @@ test.describe('reflect', function () {
 
 // ─────────────────────────────────────────────
 // Section 3: decide 终止判定优先级
-//   优先级：熔断 > 发散 > 上限 > 达成 > 继续
+//   优先级：熔断 > 发散 > 达成 > 上限 > 继续
 // ─────────────────────────────────────────────
 
 test.describe('decide 优先级', function () {
@@ -729,18 +729,73 @@ test.describe('decide 优先级', function () {
     }
   });
 
-  test('上限 优先于 达成（iteration 达上限时即便全过也判 timeout）', async function () {
+  test('末轮达成优先于上限（iteration 达上限且全过 → achieved，修复末轮误判 timeout）', async function () {
     var env = await makeEngine({ getProvider: function () { return null; } });
     try {
       var res = await env.api.init({});
       var st = await env.api.getState(res.loopId);
-      st.iteration = 6; // >= 默认 max_iterations=6
+      st.iteration = 6; // == 默认 max_iterations=6（末轮）
       await env.provider._store.set('loop.' + res.loopId, st);
 
       var verdict = await env.api.decide(res.loopId, {
         divergenceStreak: 0, proximity: 1, allPassed: true,
       });
-      assert.strictEqual(verdict.verdict, 'timeout', '上限先于达成');
+      // 修复后：达成判定上提到上限之前 → 末轮达成本轮判 achieved（不再被 timeout 抢占）
+      assert.strictEqual(verdict.verdict, 'achieved', '末轮达成 → achieved（达成优先于上限）');
+    } finally {
+      env.restore();
+    }
+  });
+
+  test('末轮达成（max_iterations override=2，iteration=2 全过 → achieved）', async function () {
+    var env = await makeEngine({ getProvider: function () { return null; } });
+    try {
+      var res = await env.api.init({ maxIterations: 2 });
+      var st = await env.api.getState(res.loopId);
+      st.iteration = 2; // == override max_iterations=2（末轮）
+      await env.provider._store.set('loop.' + res.loopId, st);
+
+      var verdict = await env.api.decide(res.loopId, {
+        divergenceStreak: 0, proximity: 1, allPassed: true,
+      });
+      assert.strictEqual(verdict.verdict, 'achieved', '末轮（iter==max）达成 → achieved');
+    } finally {
+      env.restore();
+    }
+  });
+
+  test('末轮未达成兜底 timeout（max_iterations override=2，iteration=2 proximity=0.5）', async function () {
+    var env = await makeEngine({ getProvider: function () { return null; } });
+    try {
+      var res = await env.api.init({ maxIterations: 2 });
+      var st = await env.api.getState(res.loopId);
+      st.iteration = 2; // == override max_iterations=2（末轮）
+      await env.provider._store.set('loop.' + res.loopId, st);
+
+      var verdict = await env.api.decide(res.loopId, {
+        divergenceStreak: 0, proximity: 0.5, allPassed: false,
+      });
+      assert.strictEqual(verdict.verdict, 'timeout', '末轮未达成 → 兜底 timeout');
+    } finally {
+      env.restore();
+    }
+  });
+
+  test('_decide 墙钟兜底：iteration 未达上限但 wall 超 max_wall_time_ms → timeout（直调 decide 绕过 _step 预检）', async function () {
+    var env = await makeEngine({ getProvider: function () { return null; } });
+    try {
+      var res = await env.api.init({ maxWallTimeMs: 60000 });
+      var st = await env.api.getState(res.loopId);
+      st.iteration = 2; // < 默认 max_iterations=6，不命中 iteration 上限，迫使其走墙钟分支
+      st.startedAt = new Date(Date.now() - 120000).toISOString(); // 120s 前 > 60s 上限
+      await env.provider._store.set('loop.' + res.loopId, st);
+
+      var verdict = await env.api.decide(res.loopId, {
+        divergenceStreak: 0, proximity: 0.5, allPassed: false,
+      });
+      // 直调 decide（不经 step）→ _step 墙钟预检未执行 → 命中 _decide 末尾墙钟兜底（index.js:1052-1055）
+      assert.strictEqual(verdict.verdict, 'timeout');
+      assert.ok(verdict.reason.indexOf('墙钟已达上限') !== -1, '_decide 墙钟分支 reason（区别于 _step 的 墙钟上限已达）');
     } finally {
       env.restore();
     }
@@ -856,7 +911,7 @@ test.describe('step', function () {
     }
   });
 
-  test('达到 iteration 上限时 step 直接判 timeout（硬上限）', async function () {
+  test('超过 iteration 上限时 step 经完整轮 _decide 兜底判 timeout（硬上限）', async function () {
     var env = await makeEngine();
     try {
       var res = await env.api.init({});
@@ -865,8 +920,10 @@ test.describe('step', function () {
       await env.provider._store.set('loop.' + res.loopId, st);
 
       var out = await env.api.step(res.loopId);
+      // 修复后：移除 step 预检的 max_iterations 提前出口，放行跑完整轮（iteration 6→7）；
+      //   _decide 在轮末用 evalResult 判——默认 fallback 未达成 → 兜底 timeout。
       assert.strictEqual(out.verdict, 'timeout');
-      assert.strictEqual(out.iteration, 6, '不再 +1');
+      assert.strictEqual(out.iteration, 7, '跑完末轮 +1（不再预检提前拦）');
     } finally {
       env.restore();
     }
@@ -913,6 +970,51 @@ test.describe('step', function () {
       });
       var out = await env.api.step(res.loopId);
       assert.strictEqual(out.verdict, 'achieved', '注入路径下应达成');
+      assert.strictEqual(out.iteration, 1);
+    } finally {
+      env.restore();
+    }
+  });
+
+  test('step 首轮即达成（max_iterations override=1，注入全过 checklist）→ achieved', async function () {
+    var env = await makeEngine({ getProvider: function () { return null; } });
+    try {
+      env.api.inject({
+        actuator: {
+          execute: async function () {
+            return {
+              dispatched: true,
+              checklistResult: {
+                wpId: 'WP-1', passed: true, summary: { total: 2, passed: 2, failed: 0 },
+                failedItems: [],
+              },
+            };
+          },
+        },
+        evaluator: {
+          score: async function () {
+            return {
+              proximity: 1, converged: true, diverged: false,
+              divergenceStreak: 0, allPassed: true,
+              categoryScores: [], failingDrivers: [],
+            };
+          },
+        },
+        snapshot: {
+          aggregate: async function () {
+            return {
+              workPackages: { total: 1, pending: [], completed: ['WP-1'], failed: [], blocked: [] },
+              lastChecklist: null,
+              watchdog: { health: 'healthy', running: true, deployed: true },
+            };
+          },
+        },
+      });
+      var res = await env.api.init({ goal: { wpIds: ['WP-1'] }, maxIterations: 1 });
+      var out = await env.api.step(res.loopId);
+      // max_iterations=1：首轮（iteration 0→1）即全过达成 → achieved
+      //   （修复前会被 step 预检 max_iterations 提前判 timeout；修复后首轮达成正确判 achieved）
+      assert.strictEqual(out.verdict, 'achieved', '首轮达成 → achieved');
       assert.strictEqual(out.iteration, 1);
     } finally {
       env.restore();
@@ -1090,7 +1192,7 @@ test.describe('step', function () {
     }
   });
 
-  test('WP-196-2-test: _decide 优先级回归不受计时包裹影响（熔断 > 发散 > 上限 > 达成 > 继续）', async function () {
+  test('WP-196-2-test: _decide 优先级回归不受计时包裹影响（熔断 > 发散 > 达成 > 上限 > 继续）', async function () {
     // 验证 _decide 各终态判定仍按既有优先级生效（计时仅包裹 _decide 调用，不改判定逻辑）
     var env = await makeEngine({ getProvider: function () { return null; } });
     try {
@@ -1102,11 +1204,11 @@ test.describe('step', function () {
       st.iteration = 6; // 达上限
       await env.provider._store.set('loop.' + res.loopId, st);
 
-      // 上限优先于达成（proximity 满分但因 iteration=6 判 timeout）
+      // 有 pending（noPending=false）→ 未达达成条件；达上限 → 兜底 timeout（计时零副作用）
       var verdict = await env.api.decide(res.loopId, {
         divergenceStreak: 0, proximity: 1, allPassed: true,
       });
-      assert.strictEqual(verdict.verdict, 'timeout', '上限优先级不变（计时零副作用）');
+      assert.strictEqual(verdict.verdict, 'timeout', '未达成+达上限 → timeout（计时零副作用）');
     } finally {
       env.restore();
     }
@@ -1220,12 +1322,12 @@ test.describe('出口行为 终态报告 (WP-177-2-impl-c)', function () {
     }
   });
 
-  test('step 提前硬上限 timeout 出口 → 返回值含 report + state.terminalReport 非空', async function () {
+  test('step 末轮未达成经 _decide 兜底 timeout → 返回值含 report + state.terminalReport 非空', async function () {
     var env = await makeEngine();
     try {
       var res = await env.api.init({});
       var st = await env.api.getState(res.loopId);
-      st.iteration = 6; // 触发 step 开头 iteration 硬上限提前出口
+      st.iteration = 6; // 默认 max_iterations=6；修复后不再预检提前拦，跑完整轮由 _decide 兜底
       st.history = [
         { iteration: 1, eval: { proximity: 0.3 }, verdict: 'continue' },
       ];
@@ -1484,7 +1586,7 @@ test.describe('inject & misc', function () {
     }
   });
 
-  test('init(opts) override 使上限判定按新阈值（max_iterations=3）', async function () {
+  test('init(opts) override 使上限判定按新阈值（max_iterations=3，未达成兜底 timeout）', async function () {
     var env = await makeEngine({ getProvider: function () { return null; } });
     try {
       var res = await env.api.init({ maxIterations: 3 });
@@ -1492,10 +1594,11 @@ test.describe('inject & misc', function () {
       st.iteration = 3; // >= override max_iterations=3
       await env.provider._store.set('loop.' + res.loopId, st);
 
+      // 未达成（proximity=0.5 < goal）→ 达上限兜底 timeout，验证 max_iterations=3 override 生效
       var verdict = await env.api.decide(res.loopId, {
-        divergenceStreak: 0, proximity: 1, allPassed: true,
+        divergenceStreak: 0, proximity: 0.5, allPassed: false,
       });
-      assert.strictEqual(verdict.verdict, 'timeout', 'override 后 iteration=3 即达上限');
+      assert.strictEqual(verdict.verdict, 'timeout', 'override 后 iteration=3 未达成即达上限');
     } finally {
       env.restore();
     }

@@ -20,7 +20,7 @@
  *
  * 数据来源：
  *   - engine step() 返回值 .phaseTimings（observe/think/act/reflect/decide 各 {phase, startMs, endMs, elapsedMs, summary}）
- *   - executor.run() 返回的 CheckResult._executorTrace（{spawnMs, exitCode, timedOut, rateLimited, tokenUsage}）
+ *   - executor.run() 返回的 CheckResult._executorTrace（{spawnMs, exitCode, timedOut, rateLimited, tokenUsage, endpointMs}）
  *   - step() 返回值 .verdict / .iteration
  *
  * 设计依据：docs/wp/WP-196.md、docs/wp/WP-196-1-impl.md
@@ -73,7 +73,7 @@ function _detectProjectRoot() {
  * @param {string} opts.loopId
  * @param {number} opts.iteration
  * @param {Array<{phase:string, startMs?:number, endMs?:number, elapsedMs?:number, summary?:object}>} [opts.phaseTimings]
- * @param {object} [opts.executorTrace] { spawnMs, exitCode, timedOut, rateLimited, tokenUsage }
+ * @param {object} [opts.executorTrace] { spawnMs, exitCode, timedOut, rateLimited, tokenUsage, endpointMs }
  * @param {string} [opts.verdict]
  * @param {string} [opts.dispatchedWp] 本轮 dispatch 的 WP（driver 从 pendingAction 取）
  * @returns {object} round record
@@ -154,6 +154,21 @@ function renderOneLine(roundRecord) {
     }
   }
   var line = '[iter ' + iter + '] ' + parts.join(' · ');
+  // token-usage：五段后追加紧凑端点元数据后缀（仅当 executor 提取到时显示，缺失不显示，
+  //   保持五段式视觉焦点）。承袭 WP-196 纪律——纯观测叠加，try/catch 降级不影响渲染。
+  try {
+    var exec = roundRecord.executor || {};
+    var ep = exec.endpointMs || {};
+    var tu = exec.tokenUsage || {};
+    var suffixParts = [];
+    if (typeof ep.ttft === 'number') suffixParts.push('TTFT ' + ep.ttft + 'ms');
+    if (typeof tu.input === 'number' || typeof tu.output === 'number') {
+      var inTok = (typeof tu.input === 'number') ? tu.input : '?';
+      var outTok = (typeof tu.output === 'number') ? tu.output : '?';
+      suffixParts.push('tok ' + inTok + '→' + outTok);
+    }
+    if (suffixParts.length) line += ' · ' + suffixParts.join(' · ');
+  } catch (_se) { /* 后缀降级：忽略 */ }
   if (roundRecord.dispatchedWp) {
     line += ' → dispatch ' + roundRecord.dispatchedWp;
   } else if (roundRecord.verdict && roundRecord.verdict !== 'continue') {
