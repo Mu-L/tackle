@@ -21,6 +21,9 @@
  *   - Concurrent writes may result in last-write-wins data loss.
  *   - For multi-process scenarios, consider using an external lock file or database.
  *   - Single-process concurrent operations are safe due to Node.js single-threaded nature.
+ *   - concurrent-dispatch 的 Promise.allSettled 批在同 driver 进程内并发 spawn child，
+ *     但 driverStore 写入与 PROGRESS.md / state dir 落盘均在批后串行回填（await），
+ *     故单进程并发安全成立；切勿扩展为多进程并发写（会破坏 loop 间 state 隔离）。
  */
 
 'use strict';

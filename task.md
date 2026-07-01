@@ -3,8 +3,8 @@
 ## 📊 快速概览
 
 - **进度**: 29/29 (100%) | v0.2.0~v0.3.14 路线图完成 ✅（WP-152~197 详细完成记录已归档至 [docs/archive/task-archive-2026-06-26.md](docs/archive/task-archive-2026-06-26.md)）
-- **最近更新**: 2026-06-26（task-archive 归档 WP-191~197 详细完成记录至 docs/archive/；followup-work-plan 实现：engine-timeout-bug 修复 + token-usage 观测补全 + executor 真实链路 e2e smoke + 文档漂移修正 + v0.3.4~v0.3.14 git tag 补打）
-- **规划文档**: [综合发展规划](docs/consolidated-development-plan.md) | [Final Design](docs/design/harness-universal-platform-final-design.md)
+- **最近更新**: 2026-07-01（next-dev-plan 执行 Batch 0 drift 收尾 v0.3.16：CHANGELOG `[0.3.15]` compare link 修补 + task.md 失效引用清理 + state-store 并发注释强化 + safe-path var fs 提前 + CLAUDE.md sandbox 描述降级 + v0.3.15 retro tag；承接 followup 唯一未决 P1 concurrent-dispatch）
+- **规划文档**: [Final Design](docs/design/harness-universal-platform-final-design.md)
 - **预算**: 850min（v0.2.0，含完整 Worker Threads 沙箱）
 
 ## 📦 归档索引

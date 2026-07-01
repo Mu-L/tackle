@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.16] - 2026-07-01
+
+### Fixed
+
+- **CHANGELOG `[0.3.15]` compare link 修补**：v0.3.15 段落（正文）存在但底部 link ref 断在 `[0.3.14]:`，补 `[0.3.15]: .../compare/v0.3.14...v0.3.15`（纯文档整洁；标题内 `[0.3.15]` 是纯文本字面括号非 link-reference，正文无内联引用消费，实际渲染无断链跳转失败，零功能影响）
+- **task.md 失效引用清理**：「最近更新」刷新到 2026-07-01 / v0.3.16；移除失效引用 `docs/consolidated-development-plan.md`（`docs/*` gitignored，该文件从未 tracked；保留 `docs/design/` 下 Final Design 引用）
+
+### Changed
+
+- **state-store.js 并发注释强化**：`CONCURRENCY NOTES` 补 concurrent-dispatch 批说明——同 driver 进程内 `Promise.allSettled` 并发 spawn child，但 driverStore 写入与 `PROGRESS.md` / state dir 落盘均在批后串行回填（await），单进程并发安全成立；明确勿扩展为多进程并发写（防误破 loop 间 state 隔离，为 Batch 2 真并发批铺路）
+- **safe-path.js `var fs` 提前声明**：`var fs = require('fs')` 从 `isSymlink` 之后移到文件顶部与 `var path` 同处，消除 var hoisting 误导（原依赖 hoisting 才不报错，非 bug 但脆弱）
+- **CLAUDE.md sandbox 描述降级（本地 gitignored 文档，不入本次 commit）**：根 `CLAUDE.md` 经 `.gitignore:6` 忽略（`claude-md-injector` 首次创建 + 仅 marker 间注入 Plan Mode 块，主体手写，`git ls-files` 证实不 tracked）；Runtime Layer sandbox 三件套描述补标注「设计预留，未接通」对齐 `plugin-loader.js` 既有「decorative / NOT enforced」注释；订正持久于本地（build 不覆盖 marker 外内容），但 gitignored 故不随发版入库
+- **git tag retro**：补 v0.3.15 tag（发版三件套遗漏项，对齐仓库既有 v0.3.4~v0.3.14 retro 打 tag 事实）
+
 ## [0.3.15] - 2026-06-27
 
 ### Fixed
@@ -618,6 +632,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.3.16]: https://github.com/ph419/tackle-harness/compare/v0.3.15...v0.3.16
+[0.3.15]: https://github.com/ph419/tackle-harness/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/ph419/tackle-harness/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/ph419/tackle-harness/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/ph419/tackle-harness/compare/v0.3.11...v0.3.12

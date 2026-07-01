@@ -15,6 +15,7 @@
 'use strict';
 
 var path = require('path');
+var fs = require('fs');
 
 /**
  * 合法标识符字符集：首字符字母/数字，其余允许 字母/数字/_/-，长度 1-64。
@@ -108,9 +109,6 @@ function isSymlink(p) {
     return false;
   }
 }
-
-// lstatSync 需要 fs
-var fs = require('fs');
 
 module.exports = {
   SAFE_NAME_RE: SAFE_NAME_RE,
