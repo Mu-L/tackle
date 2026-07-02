@@ -4,6 +4,7 @@
 .claude-state.*/
 .claude-daemon/
 CLAUDE.md
+AGENTS.md
 
 # .tackle/ 是 WP-196 引入的 Agentic Loop per-round trace 运行时落盘区
 # （.tackle/loop-{loopId}/trace.jsonl：五阶段 elapsedMs + executor 打点），

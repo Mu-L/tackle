@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-07-02
+
+### Changed
+
+- **`.gitignore` 忽略 `AGENTS.md`**：与 `CLAUDE.md` 同列于「Claude Code (build output + runtime)」段。`AGENTS.md` 作为本地/agent 工作区指令文件（由 `zcode /init` 生成），属非框架产物，不入版本控制——与 `CLAUDE.md`（gitignored 构建产物）保持一致的 gitignore 边界。
+
 ## [0.4.2] - 2026-07-01
 
 ### Fixed
