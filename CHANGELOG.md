@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-07-02
+
+### Removed
+
+- **删除 `reports/` 目录**：移除历史执行报告（`2026-05-09_WP048-051_execution_report.md`、`wp-047-e2e-test-report.md`）。这些一次性报告属临时产物，不再随仓库维护。
+
 ## [0.4.3] - 2026-07-02
 
 ### Changed
@@ -702,6 +708,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 插件注册表 (`plugin-registry.json`)
 - 运行时层：harness-build、plugin-loader、event-bus、state-store、config-manager、logger
 
+[0.4.4]: https://github.com/ph419/tackle-harness/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/ph419/tackle-harness/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/ph419/tackle-harness/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/ph419/tackle-harness/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/ph419/tackle-harness/compare/v0.3.17...v0.4.0
